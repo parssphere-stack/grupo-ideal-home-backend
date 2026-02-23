@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+.env
+.tmp/
+credentials.json
+token.json
+*.log
+migrate.js
+count.js
+dump/

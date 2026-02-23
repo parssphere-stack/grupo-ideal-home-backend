@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grupo Ideal Home — Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Montserrat:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --gold: #C9A84C;
+  --gold-light: #E8D5A3;
+  --gold-dark: #9E7B2F;
+  --black: #0A0A0A;
+  --charcoal: #1A1A1A;
+  --dark-gray: #2A2A2A;
+  --medium-gray: #6B6B6B;
+  --light-gray: #B8B8B8;
+  --off-white: #F5F0E8;
+  --cream: #FAF7F0;
+  --white: #FFFFFF;
+  --green: #4CAF50;
+  --red: #E74C3C;
+  --blue: #3498DB;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Montserrat', sans-serif;
+  background: var(--black);
+  color: var(--cream);
+  min-height: 100vh;
+}
+
+/* ─── TOP NAV ─── */
+.top-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(10,10,10,0.97);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(201,168,76,0.15);
+  padding: 0 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 64px;
+}
+.nav-brand {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.2rem;
+  color: var(--gold);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+}
+.nav-brand small {
+  display: block;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.55rem;
+  color: var(--medium-gray);
+  letter-spacing: 0.35em;
+  font-weight: 300;
+}
+.nav-tabs {
+  display: flex;
+  gap: 0;
+  height: 100%;
+}
+.nav-tab {
+  padding: 0 28px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--light-gray);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font-family: inherit;
+}
+.nav-tab:hover { color: var(--gold); }
+.nav-tab.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+.nav-tab svg { width: 16px; height: 16px; }
+
+/* ─── PAGES ─── */
+.page { display: none; padding-top: 64px; min-height: 100vh; }
+.page.active { display: block; }
+
+/* ═══════════════════════════════════════
+   PAGE 1: PROPERTIES
+   ═══════════════════════════════════════ */
+
+.properties-hero {
+  padding: 50px 40px 30px;
+  background: linear-gradient(180deg, rgba(201,168,76,0.06) 0%, transparent 100%);
+}
+.properties-hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 2.4rem;
+  font-weight: 400;
+}
+.properties-hero h1 em { font-style: italic; color: var(--gold); }
+.properties-hero p {
+  color: var(--medium-gray);
+  font-size: 0.85rem;
+  margin-top: 8px;
+  font-weight: 300;
+}
+
+/* Search & Filters */
+.filters-bar {
+  padding: 20px 40px;
+  background: var(--charcoal);
+  border-top: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.filter-label {
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--medium-gray);
+}
+.filter-select, .filter-input {
+  background: var(--dark-gray);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--cream);
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  min-width: 140px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+.filter-select:focus, .filter-input:focus {
+  border-color: var(--gold);
+}
+.filter-input { min-width: 100px; }
+.filter-btn {
+  background: var(--gold);
+  color: var(--black);
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s;
+  align-self: flex-end;
+}
+.filter-btn:hover { background: var(--gold-light); transform: translateY(-1px); }
+.filter-reset {
+  background: transparent;
+  color: var(--medium-gray);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  align-self: flex-end;
+}
+.filter-reset:hover { border-color: var(--gold); color: var(--gold); }
+
+/* Results info */
+.results-bar {
+  padding: 16px 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--medium-gray);
+}
+.results-count span { color: var(--gold); font-weight: 600; }
+.sort-select {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--light-gray);
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+
+/* Property Grid */
+.properties-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 20px;
+  padding: 20px 40px 60px;
+}
+
+.property-card {
+  background: var(--charcoal);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.4s ease;
+  cursor: pointer;
+}
+.property-card:hover {
+  border-color: rgba(201,168,76,0.3);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+}
+.property-img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  background: var(--dark-gray);
+  display: block;
+}
+.property-img-placeholder {
+  width: 100%;
+  height: 200px;
+  background: linear-gradient(135deg, var(--dark-gray), var(--charcoal));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--medium-gray);
+  font-size: 2rem;
+}
+.property-body { padding: 20px; }
+.property-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.property-type {
+  font-size: 0.6rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  background: rgba(201,168,76,0.1);
+  padding: 4px 10px;
+  border-radius: 3px;
+}
+.property-operation {
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 3px;
+}
+.property-operation.sale { color: var(--green); background: rgba(76,175,80,0.1); }
+.property-operation.rent { color: var(--blue); background: rgba(52,152,219,0.1); }
+
+.property-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.05rem;
+  font-weight: 400;
+  line-height: 1.3;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.property-location {
+  font-size: 0.75rem;
+  color: var(--medium-gray);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.property-price {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.5rem;
+  color: var(--gold);
+  margin-bottom: 4px;
+}
+.property-price-sqm {
+  font-size: 0.7rem;
+  color: var(--medium-gray);
+  margin-bottom: 14px;
+}
+.property-features {
+  display: flex;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+.property-feat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  color: var(--light-gray);
+}
+.property-feat svg { width: 14px; height: 14px; color: var(--gold); }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 40px 60px;
+}
+.page-btn {
+  background: var(--dark-gray);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--light-gray);
+  padding: 8px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  transition: all 0.3s;
+}
+.page-btn:hover, .page-btn.active {
+  background: var(--gold);
+  color: var(--black);
+  border-color: var(--gold);
+}
+
+/* Property Detail Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 2000;
+  overflow-y: auto;
+  padding: 40px;
+}
+.modal-overlay.open { display: flex; justify-content: center; align-items: flex-start; }
+.modal {
+  background: var(--charcoal);
+  border: 1px solid rgba(201,168,76,0.15);
+  border-radius: 12px;
+  max-width: 800px;
+  width: 100%;
+  margin: 20px auto;
+  overflow: hidden;
+}
+.modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0,0,0,0.6);
+  border: none;
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  z-index: 1;
+}
+.modal-img {
+  width: 100%;
+  height: 350px;
+  object-fit: cover;
+  position: relative;
+}
+.modal-body { padding: 30px; }
+.modal-body h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.6rem;
+  font-weight: 400;
+  margin-bottom: 6px;
+}
+.modal-body .property-location { margin-bottom: 20px; }
+.modal-body .property-price { font-size: 2rem; }
+.modal-desc {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.85rem;
+  color: var(--light-gray);
+  line-height: 1.8;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.modal-features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 20px;
+}
+.modal-feat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--light-gray);
+  padding: 10px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
+}
+.modal-feat-item .check { color: var(--green); }
+.modal-feat-item .cross { color: var(--red); opacity: 0.4; }
+.modal-link {
+  display: inline-block;
+  margin-top: 20px;
+  background: var(--gold);
+  color: var(--black);
+  padding: 12px 28px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  transition: all 0.3s;
+}
+.modal-link:hover { background: var(--gold-light); }
+
+/* ═══════════════════════════════════════
+   PAGE 2: AI CHAT
+   ═══════════════════════════════════════ */
+
+.chat-page {
+  display: flex;
+  height: calc(100vh - 64px);
+}
+.chat-sidebar {
+  width: 280px;
+  background: var(--charcoal);
+  border-right: 1px solid rgba(255,255,255,0.06);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+.chat-sidebar h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+  margin-bottom: 20px;
+  color: var(--gold);
+}
+.chat-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-suggestion {
+  background: rgba(201,168,76,0.06);
+  border: 1px solid rgba(201,168,76,0.12);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 0.78rem;
+  color: var(--light-gray);
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: left;
+}
+.chat-suggestion:hover {
+  background: rgba(201,168,76,0.12);
+  border-color: var(--gold);
+  color: var(--cream);
+}
+.chat-stats-box {
+  margin-top: auto;
+  padding: 16px;
+  background: rgba(201,168,76,0.05);
+  border: 1px solid rgba(201,168,76,0.1);
+  border-radius: 8px;
+}
+.chat-stats-box h4 {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+.chat-stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--medium-gray);
+  padding: 4px 0;
+}
+.chat-stat-row span:last-child { color: var(--cream); }
+
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 30px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chat-msg {
+  max-width: 75%;
+  padding: 14px 18px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  animation: msgIn 0.3s ease;
+}
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chat-msg.bot {
+  align-self: flex-start;
+  background: rgba(201,168,76,0.08);
+  border: 1px solid rgba(201,168,76,0.15);
+  color: var(--cream);
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--gold);
+  color: var(--black);
+}
+.chat-msg.bot .msg-header {
+  font-size: 0.65rem;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-msg.bot .msg-header .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Property cards inside chat */
+.chat-properties {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.chat-prop-card {
+  min-width: 220px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+.chat-prop-card:hover {
+  border-color: var(--gold);
+  transform: scale(1.02);
+}
+.chat-prop-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+}
+.chat-prop-info {
+  padding: 10px;
+}
+.chat-prop-info h5 {
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.chat-prop-info .price {
+  color: var(--gold);
+  font-family: 'Playfair Display', serif;
+  font-size: 1rem;
+}
+.chat-prop-info .meta {
+  font-size: 0.65rem;
+  color: var(--medium-gray);
+  margin-top: 4px;
+}
+
+.chat-input-area {
+  padding: 16px 40px;
+  background: var(--charcoal);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  gap: 12px;
+}
+.chat-input {
+  flex: 1;
+  background: var(--dark-gray);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--cream);
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.3s;
+}
+.chat-input:focus { border-color: var(--gold); }
+.chat-input::placeholder { color: var(--medium-gray); }
+.chat-send {
+  background: var(--gold);
+  color: var(--black);
+  border: none;
+  padding: 0 24px;
+  border-radius: 10px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+.chat-send:hover { background: var(--gold-light); }
+
+/* ═══════════════════════════════════════
+   PAGE 3: DASHBOARD
+   ═══════════════════════════════════════ */
+
+.dashboard {
+  padding: 30px 40px;
+}
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+.dash-header h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.8rem;
+  font-weight: 400;
+}
+.dash-header h1 em { font-style: italic; color: var(--gold); }
+.dash-actions { display: flex; gap: 12px; }
+.dash-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.3s;
+  border: none;
+}
+.dash-btn-primary {
+  background: var(--gold);
+  color: var(--black);
+}
+.dash-btn-primary:hover { background: var(--gold-light); }
+.dash-btn-outline {
+  background: transparent;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+}
+.dash-btn-outline:hover { background: rgba(201,168,76,0.1); }
+
+/* Stats Cards */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 30px;
+}
+.stat-card {
+  background: var(--charcoal);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 24px;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold);
+  opacity: 0.5;
+}
+.stat-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--medium-gray);
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-family: 'Playfair Display', serif;
+  font-size: 2rem;
+  color: var(--gold);
+  line-height: 1;
+}
+.stat-change {
+  font-size: 0.7rem;
+  margin-top: 6px;
+}
+.stat-change.up { color: var(--green); }
+.stat-change.down { color: var(--red); }
+
+/* Dashboard Sections */
+.dash-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+.dash-panel {
+  background: var(--charcoal);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 24px;
+}
+.dash-panel h3 {
+  font-family: 'Playfair Display', serif;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dash-panel h3 span {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.65rem;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* City breakdown chart */
+.city-bars { display: flex; flex-direction: column; gap: 12px; }
+.city-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.city-name {
+  font-size: 0.78rem;
+  color: var(--light-gray);
+  min-width: 140px;
+}
+.city-bar-track {
+  flex: 1;
+  height: 8px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.city-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-dark), var(--gold));
+  border-radius: 4px;
+  transition: width 1s ease;
+}
+.city-count {
+  font-size: 0.75rem;
+  color: var(--medium-gray);
+  min-width: 30px;
+  text-align: right;
+}
+.city-avg {
+  font-size: 0.7rem;
+  color: var(--gold);
+  min-width: 80px;
+  text-align: right;
+}
+
+/* Recent Properties Table */
+.recent-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.recent-table th {
+  text-align: left;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--medium-gray);
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.recent-table td {
+  padding: 12px 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  color: var(--light-gray);
+}
+.recent-table tr:hover td { color: var(--cream); }
+.td-price { color: var(--gold) !important; font-weight: 500; }
+
+/* Price Distribution */
+.price-dist { display: flex; flex-direction: column; gap: 8px; }
+.price-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.price-range-label {
+  font-size: 0.7rem;
+  color: var(--medium-gray);
+  min-width: 100px;
+}
+.price-range-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.04);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.price-range-fill {
+  height: 100%;
+  background: var(--gold);
+  border-radius: 3px;
+}
+.price-range-count {
+  font-size: 0.7rem;
+  color: var(--light-gray);
+  min-width: 20px;
+  text-align: right;
+}
+
+/* Scraper Controls */
+.scraper-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(76,175,80,0.08);
+  border: 1px solid rgba(76,175,80,0.15);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.8rem;
+}
+.scraper-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.scraper-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.scraper-action-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-align: center;
+}
+
+/* Loading */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px;
+  color: var(--medium-gray);
+}
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgba(201,168,76,0.2);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--black); }
+::-webkit-scrollbar-thumb { background: var(--dark-gray); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gold-dark); }
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 1024px) {
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .dash-grid { grid-template-columns: 1fr; }
+  .chat-sidebar { display: none; }
+  .properties-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 768px) {
+  .top-nav { padding: 0 16px; }
+  .nav-tab span { display: none; }
+  .properties-hero, .filters-bar, .properties-grid, .results-bar, .pagination, .dashboard { padding-left: 16px; padding-right: 16px; }
+  .modal-overlay { padding: 10px; }
+  .modal-features-grid { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<nav class="top-nav">
+  <a class="nav-brand" onclick="showPage('properties')">
+    Grupo Ideal Home
+    <small>Luxury Real Estate — Spain</small>
+  </a>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('properties')" id="tab-properties">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>
+      <span>Propiedades</span>
+    </button>
+    <button class="nav-tab" onclick="showPage('chat')" id="tab-chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+      <span>AI Agent</span>
+    </button>
+    <button class="nav-tab" onclick="showPage('dashboard')" id="tab-dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      <span>Dashboard</span>
+    </button>
+  </div>
+</nav>
+
+<!-- ═══ PAGE 1: PROPERTIES ═══ -->
+<div class="page active" id="page-properties">
+  <div class="properties-hero">
+    <h1>Propiedades en <em>España</em></h1>
+    <p id="properties-subtitle">Cargando propiedades...</p>
+  </div>
+  
+  <div class="filters-bar">
+    <div class="filter-group">
+      <span class="filter-label">Ciudad</span>
+      <select class="filter-select" id="f-city">
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Operación</span>
+      <select class="filter-select" id="f-operation">
+        <option value="">Todas</option>
+        <option value="sale">Venta</option>
+        <option value="rent">Alquiler</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Tipo</span>
+      <select class="filter-select" id="f-type">
+        <option value="">Todos</option>
+        <option value="apartment">Piso</option>
+        <option value="house">Casa</option>
+        <option value="villa">Villa</option>
+        <option value="penthouse">Ático</option>
+        <option value="studio">Estudio</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Precio mín</span>
+      <input class="filter-input" type="number" id="f-minprice" placeholder="€">
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Precio máx</span>
+      <input class="filter-input" type="number" id="f-maxprice" placeholder="€">
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Hab. mín</span>
+      <select class="filter-select" id="f-beds" style="min-width:80px">
+        <option value="">—</option>
+        <option value="1">1+</option>
+        <option value="2">2+</option>
+        <option value="3">3+</option>
+        <option value="4">4+</option>
+      </select>
+    </div>
+    <button class="filter-btn" onclick="applyFilters()">Buscar</button>
+    <button class="filter-reset" onclick="resetFilters()">Reset</button>
+  </div>
+  
+  <div class="results-bar">
+    <div class="results-count" id="results-count">Cargando...</div>
+    <select class="sort-select" id="sort-select" onchange="applyFilters()">
+      <option value="-createdAt">Más recientes</option>
+      <option value="price">Precio ↑</option>
+      <option value="-price">Precio ↓</option>
+      <option value="-features.size_sqm">Más grandes</option>
+    </select>
+  </div>
+  
+  <div class="properties-grid" id="properties-grid">
+    <div class="loading"><div class="spinner"></div>Cargando propiedades...</div>
+  </div>
+  
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<!-- ═══ PAGE 2: AI CHAT ═══ -->
+<div class="page" id="page-chat">
+  <div class="chat-page">
+    <div class="chat-sidebar">
+      <h3>🤖 AI Agent</h3>
+      <div class="chat-suggestions">
+        <button class="chat-suggestion" onclick="sendChat('¿Qué pisos hay en Madrid por menos de 300.000€?')">🏠 Pisos en Madrid < 300K€</button>
+        <button class="chat-suggestion" onclick="sendChat('Busco una casa con jardín en la zona de Madrid')">🌳 Casa con jardín en Madrid</button>
+        <button class="chat-suggestion" onclick="sendChat('¿Cuál es el precio medio por m² en Chamberí?')">📊 Precio m² en Chamberí</button>
+        <button class="chat-suggestion" onclick="sendChat('Muéstrame las propiedades más baratas disponibles')">💰 Propiedades más baratas</button>
+        <button class="chat-suggestion" onclick="sendChat('¿Hay áticos o penthouses disponibles?')">🏢 Áticos disponibles</button>
+        <button class="chat-suggestion" onclick="sendChat('Recomiéndame zonas para invertir en Madrid')">📈 Zonas para invertir</button>
+      </div>
+      <div class="chat-stats-box" id="chat-stats-box">
+        <h4>Base de Datos</h4>
+        <div class="chat-stat-row"><span>Propiedades</span><span id="cs-total">—</span></div>
+        <div class="chat-stat-row"><span>Ciudades</span><span id="cs-cities">—</span></div>
+        <div class="chat-stat-row"><span>Última sync</span><span id="cs-sync">—</span></div>
+      </div>
+    </div>
+    <div class="chat-main">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-msg bot">
+          <div class="msg-header"><span class="dot"></span> Ideal Home AI</div>
+          Hola, soy el asistente inmobiliario de Grupo Ideal Home. Tengo acceso a nuestra base de datos de propiedades en España. ¿En qué puedo ayudarte hoy?
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <input class="chat-input" id="chat-input" placeholder="Pregunta sobre propiedades, precios, zonas..." onkeypress="if(event.key==='Enter')sendChat()">
+        <button class="chat-send" onclick="sendChat()">Enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PAGE 3: DASHBOARD ═══ -->
+<div class="page" id="page-dashboard">
+  <div class="dashboard">
+    <div class="dash-header">
+      <h1>Panel de <em>Control</em></h1>
+      <div class="dash-actions">
+        <button class="dash-btn dash-btn-outline" onclick="refreshDashboard()">⟳ Actualizar</button>
+        <button class="dash-btn dash-btn-primary" onclick="runScraper()">▶ Ejecutar Scraper</button>
+      </div>
+    </div>
+    
+    <div class="stats-grid" id="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Propiedades Activas</div>
+        <div class="stat-value" id="d-active">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Precio Medio</div>
+        <div class="stat-value" id="d-avgprice">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Ciudades</div>
+        <div class="stat-value" id="d-cities">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Última Sincronización</div>
+        <div class="stat-value" id="d-lastsync" style="font-size:1rem">—</div>
+      </div>
+    </div>
+    
+    <div class="dash-grid">
+      <div class="dash-panel">
+        <h3>Propiedades por Ciudad <span onclick="showPage('properties')">Ver todas →</span></h3>
+        <div class="city-bars" id="city-bars"></div>
+      </div>
+      <div class="dash-panel">
+        <h3>Distribución de Precios</h3>
+        <div class="price-dist" id="price-dist"></div>
+      </div>
+    </div>
+    
+    <div class="dash-panel" style="margin-top: 20px">
+      <h3>Propiedades Recientes <span onclick="showPage('properties')">Ver todas →</span></h3>
+      <table class="recent-table">
+        <thead>
+          <tr>
+            <th>Título</th>
+            <th>Ciudad</th>
+            <th>Tipo</th>
+            <th>Precio</th>
+            <th>m²</th>
+            <th>Hab.</th>
+          </tr>
+        </thead>
+        <tbody id="recent-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PROPERTY DETAIL MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <img class="modal-img" id="modal-img" src="" alt="">
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════
+const API = 'http://localhost:3000/api';
+let allProperties = [];
+let currentPage = 1;
+let totalPages = 1;
+let statsData = null;
+
+// ═══════════════════════════════════════
+// PAGE NAVIGATION
+// ═══════════════════════════════════════
+function showPage(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  document.getElementById(`tab-${page}`).classList.add('active');
+  
+  if (page === 'properties' && allProperties.length === 0) loadProperties();
+  if (page === 'dashboard') loadDashboard();
+  if (page === 'chat') loadChatStats();
+}
+
+// ═══════════════════════════════════════
+// PROPERTIES PAGE
+// ═══════════════════════════════════════
+async function loadProperties(page = 1) {
+  currentPage = page;
+  const grid = document.getElementById('properties-grid');
+  grid.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando propiedades...</div>';
+  
+  try {
+    const params = new URLSearchParams({ page, limit: 12 });
+    
+    // Apply filters
+    const city = document.getElementById('f-city').value;
+    const operation = document.getElementById('f-operation').value;
+    const type = document.getElementById('f-type').value;
+    const minPrice = document.getElementById('f-minprice').value;
+    const maxPrice = document.getElementById('f-maxprice').value;
+    const beds = document.getElementById('f-beds').value;
+    const sort = document.getElementById('sort-select').value;
+    
+    if (city) params.set('city', city);
+    if (operation) params.set('operation', operation);
+    if (type) params.set('type', type);
+    if (minPrice) params.set('minPrice', minPrice);
+    if (maxPrice) params.set('maxPrice', maxPrice);
+    if (beds) params.set('bedrooms', beds);
+    if (sort) params.set('sort', sort);
+    
+    const res = await fetch(`${API}/properties?${params}`);
+    const data = await res.json();
+    
+    allProperties = data.properties || data;
+    const total = data.total || allProperties.length;
+    totalPages = data.pages || Math.ceil(total / 12);
+    
+    document.getElementById('properties-subtitle').textContent = 
+      `${total} propiedades disponibles en nuestra base de datos`;
+    document.getElementById('results-count').innerHTML = 
+      `Mostrando <span>${allProperties.length}</span> de <span>${total}</span> propiedades`;
+    
+    renderProperties();
+    renderPagination();
+    populateCityFilter();
+    
+  } catch (error) {
+    grid.innerHTML = `<div class="loading" style="color:var(--red)">Error: ${error.message}. ¿Está el servidor activo en localhost:3000?</div>`;
+  }
+}
+
+function renderProperties() {
+  const grid = document.getElementById('properties-grid');
+  if (allProperties.length === 0) {
+    grid.innerHTML = '<div class="loading">No se encontraron propiedades con estos filtros</div>';
+    return;
+  }
+  
+  grid.innerHTML = allProperties.map(p => `
+    <div class="property-card" onclick="showPropertyDetail('${p._id}')">
+      ${p.images && p.images.length > 0 
+        ? `<img class="property-img" src="${p.images[0]}" alt="${p.title}" loading="lazy" onerror="this.outerHTML='<div class=property-img-placeholder>🏠</div>'">`
+        : '<div class="property-img-placeholder">🏠</div>'}
+      <div class="property-body">
+        <div class="property-meta">
+          <span class="property-type">${typeLabel(p.type)}</span>
+          <span class="property-operation ${p.operation}">${p.operation === 'sale' ? 'Venta' : 'Alquiler'}</span>
+        </div>
+        <div class="property-title">${p.title}</div>
+        <div class="property-location">📍 ${p.location?.city || ''}${p.location?.district ? ', ' + p.location.district : ''}</div>
+        <div class="property-price">${formatPrice(p.price)}</div>
+        <div class="property-price-sqm">${p.price_per_sqm ? formatPrice(p.price_per_sqm) + '/m²' : ''}</div>
+        <div class="property-features">
+          ${p.features?.bedrooms ? `<span class="property-feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7"/><path d="M3 12h18"/><path d="M6 12V7"/><path d="M18 12V7"/></svg>${p.features.bedrooms} hab</span>` : ''}
+          ${p.features?.bathrooms ? `<span class="property-feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16a1 1 0 011 1v3a4 4 0 01-4 4H7a4 4 0 01-4-4v-3a1 1 0 011-1z"/><path d="M6 12V5a2 2 0 012-2h3v2.25"/></svg>${p.features.bathrooms} baño</span>` : ''}
+          ${p.features?.size_sqm ? `<span class="property-feat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>${p.features.size_sqm} m²</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderPagination() {
+  const cont = document.getElementById('pagination');
+  if (totalPages <= 1) { cont.innerHTML = ''; return; }
+  
+  let html = '';
+  if (currentPage > 1) html += `<button class="page-btn" onclick="loadProperties(${currentPage - 1})">← Anterior</button>`;
+  for (let i = 1; i <= totalPages; i++) {
+    html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="loadProperties(${i})">${i}</button>`;
+  }
+  if (currentPage < totalPages) html += `<button class="page-btn" onclick="loadProperties(${currentPage + 1})">Siguiente →</button>`;
+  cont.innerHTML = html;
+}
+
+async function populateCityFilter() {
+  try {
+    const res = await fetch(`${API}/scraper/stats`);
+    const data = await res.json();
+    const select = document.getElementById('f-city');
+    if (select.options.length <= 1 && data.by_city) {
+      data.by_city.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.city;
+        opt.textContent = `${c.city} (${c.count})`;
+        select.appendChild(opt);
+      });
+    }
+  } catch(e) {}
+}
+
+function applyFilters() { loadProperties(1); }
+function resetFilters() {
+  document.getElementById('f-city').value = '';
+  document.getElementById('f-operation').value = '';
+  document.getElementById('f-type').value = '';
+  document.getElementById('f-minprice').value = '';
+  document.getElementById('f-maxprice').value = '';
+  document.getElementById('f-beds').value = '';
+  document.getElementById('sort-select').value = '-createdAt';
+  loadProperties(1);
+}
+
+// Property Detail
+async function showPropertyDetail(id) {
+  const p = allProperties.find(x => x._id === id);
+  if (!p) return;
+  
+  const img = document.getElementById('modal-img');
+  img.src = (p.images && p.images[0]) || '';
+  img.style.display = p.images && p.images[0] ? 'block' : 'none';
+  
+  const feats = p.features || {};
+  document.getElementById('modal-body').innerHTML = `
+    <div class="property-meta" style="margin-bottom:12px">
+      <span class="property-type">${typeLabel(p.type)}</span>
+      <span class="property-operation ${p.operation}">${p.operation === 'sale' ? 'Venta' : 'Alquiler'}</span>
+    </div>
+    <h2>${p.title}</h2>
+    <div class="property-location">📍 ${p.location?.address || ''} · ${p.location?.city || ''} · ${p.location?.district || ''}</div>
+    <div class="property-price">${formatPrice(p.price)}</div>
+    <div class="property-price-sqm">${p.price_per_sqm ? formatPrice(p.price_per_sqm) + '/m²' : ''}</div>
+    
+    <div class="modal-features-grid">
+      ${feats.size_sqm ? feat('📐', feats.size_sqm + ' m²') : ''}
+      ${feats.bedrooms ? feat('🛏️', feats.bedrooms + ' Habitaciones') : ''}
+      ${feats.bathrooms ? feat('🚿', feats.bathrooms + ' Baños') : ''}
+      ${feats.floor ? feat('🏢', 'Planta ' + feats.floor) : ''}
+      ${featBool('🛗', 'Ascensor', feats.has_elevator)}
+      ${featBool('🅿️', 'Parking', feats.has_parking)}
+      ${featBool('🌤️', 'Terraza', feats.has_terrace)}
+      ${featBool('🏊', 'Piscina', feats.has_pool)}
+      ${featBool('❄️', 'Aire Acond.', feats.has_ac)}
+    </div>
+    
+    ${p.description ? `<div class="modal-desc">${p.description}</div>` : ''}
+    
+    ${p.url ? `<a class="modal-link" href="${p.url}" target="_blank">Ver en Idealista →</a>` : ''}
+  `;
+  
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function feat(icon, text) {
+  return `<div class="modal-feat-item">${icon} ${text}</div>`;
+}
+function featBool(icon, label, val) {
+  if (val === true) return `<div class="modal-feat-item"><span class="check">✓</span> ${icon} ${label}</div>`;
+  return `<div class="modal-feat-item"><span class="cross">✗</span> ${icon} ${label}</div>`;
+}
+
+// ═══════════════════════════════════════
+// AI CHAT PAGE
+// ═══════════════════════════════════════
+async function loadChatStats() {
+  try {
+    const res = await fetch(`${API}/scraper/stats`);
+    const data = await res.json();
+    document.getElementById('cs-total').textContent = data.active || 0;
+    document.getElementById('cs-cities').textContent = data.by_city?.length || 0;
+    document.getElementById('cs-sync').textContent = data.last_scraped_at 
+      ? new Date(data.last_scraped_at).toLocaleDateString('es-ES') 
+      : '—';
+  } catch(e) {}
+}
+
+async function sendChat(text) {
+  const input = document.getElementById('chat-input');
+  const msg = text || input.value.trim();
+  if (!msg) return;
+  input.value = '';
+  
+  const container = document.getElementById('chat-messages');
+  
+  // User message
+  container.innerHTML += `<div class="chat-msg user">${msg}</div>`;
+  
+  // Typing indicator
+  const typingId = 'typing-' + Date.now();
+  container.innerHTML += `<div class="chat-msg bot" id="${typingId}"><div class="msg-header"><span class="dot"></span> Ideal Home AI</div>Buscando en nuestra base de datos...</div>`;
+  container.scrollTop = container.scrollHeight;
+  
+  try {
+    // Search properties based on user query
+    const searchResults = await searchPropertiesForChat(msg);
+    
+    // Build AI response
+    let response = generateAIResponse(msg, searchResults);
+    
+    // Replace typing indicator
+    const typingEl = document.getElementById(typingId);
+    if (typingEl) {
+      typingEl.innerHTML = `<div class="msg-header"><span class="dot"></span> Ideal Home AI</div>${response}`;
+    }
+    
+  } catch (error) {
+    const typingEl = document.getElementById(typingId);
+    if (typingEl) {
+      typingEl.innerHTML = `<div class="msg-header"><span class="dot"></span> Ideal Home AI</div>Lo siento, ha ocurrido un error al buscar. ¿Puedes intentarlo de nuevo?`;
+    }
+  }
+  
+  container.scrollTop = container.scrollHeight;
+}
+
+async function searchPropertiesForChat(query) {
+  const q = query.toLowerCase();
+  const params = new URLSearchParams({ limit: 50 });
+  
+  // Detect city
+  if (q.includes('madrid')) params.set('city', 'Madrid');
+  if (q.includes('barcelona')) params.set('city', 'Barcelona');
+  if (q.includes('málaga') || q.includes('malaga')) params.set('city', 'Málaga');
+  
+  // Detect operation
+  if (q.includes('alquiler') || q.includes('alquilar') || q.includes('rent')) params.set('operation', 'rent');
+  if (q.includes('comprar') || q.includes('venta') || q.includes('buy')) params.set('operation', 'sale');
+  
+  // Detect type
+  if (q.includes('piso') || q.includes('apartamento')) params.set('type', 'apartment');
+  if (q.includes('casa') || q.includes('chalet')) params.set('type', 'house');
+  if (q.includes('villa')) params.set('type', 'villa');
+  if (q.includes('ático') || q.includes('penthouse') || q.includes('atico')) params.set('type', 'penthouse');
+  if (q.includes('estudio') || q.includes('studio')) params.set('type', 'studio');
+  
+  // Detect price
+  const priceMatch = q.match(/(\d{2,3})[.,]?(\d{3})?\s*€|(\d{2,3})\s*mil|menos\s*de\s*(\d+)/);
+  if (priceMatch) {
+    let price;
+    if (priceMatch[1] && priceMatch[2]) price = parseInt(priceMatch[1] + priceMatch[2]);
+    else if (priceMatch[3]) price = parseInt(priceMatch[3]) * 1000;
+    else if (priceMatch[4]) price = parseInt(priceMatch[4]);
+    if (price > 0) {
+      if (price < 1000) price *= 1000;
+      params.set('maxPrice', price);
+    }
+  }
+  // Detect price patterns like "300k" or "300.000"
+  const priceK = q.match(/(\d+)\s*k\s*€?/);
+  if (priceK) params.set('maxPrice', parseInt(priceK[1]) * 1000);
+  
+  // Detect bedrooms
+  const bedMatch = q.match(/(\d+)\s*(?:habitaci|dormitorio|hab\b)/);
+  if (bedMatch) params.set('bedrooms', bedMatch[1]);
+  
+  // Detect features
+  if (q.includes('jardín') || q.includes('jardin') || q.includes('garden')) params.set('garden', 'true');
+  if (q.includes('piscina') || q.includes('pool')) params.set('pool', 'true');
+  if (q.includes('terraza') || q.includes('terrace')) params.set('terrace', 'true');
+  if (q.includes('parking') || q.includes('garaje')) params.set('parking', 'true');
+  
+  // Sort by relevance
+  if (q.includes('barato') || q.includes('económic') || q.includes('cheap')) params.set('sort', 'price');
+  if (q.includes('caro') || q.includes('luj') || q.includes('expensive')) params.set('sort', '-price');
+  if (q.includes('grande') || q.includes('amplio')) params.set('sort', '-features.size_sqm');
+  
+  const res = await fetch(`${API}/properties?${params}`);
+  const data = await res.json();
+  return data.properties || data || [];
+}
+
+function generateAIResponse(query, properties) {
+  const q = query.toLowerCase();
+  const count = properties.length;
+  
+  if (count === 0) {
+    return 'No he encontrado propiedades que coincidan exactamente con tu búsqueda. ¿Puedes ajustar los criterios? Por ejemplo, prueba con un rango de precio más amplio o una zona diferente.';
+  }
+  
+  // Stats
+  const avgPrice = Math.round(properties.reduce((s,p) => s + p.price, 0) / count);
+  const minPrice = Math.min(...properties.map(p => p.price));
+  const maxPrice = Math.max(...properties.map(p => p.price));
+  const avgSize = Math.round(properties.reduce((s,p) => s + (p.features?.size_sqm || 0), 0) / count);
+  
+  // Price per m² analysis
+  if (q.includes('precio') && q.includes('m²') || q.includes('precio medio')) {
+    const withPricePerSqm = properties.filter(p => p.price_per_sqm);
+    const avgPpSqm = Math.round(withPricePerSqm.reduce((s,p) => s + p.price_per_sqm, 0) / withPricePerSqm.length);
+    
+    return `📊 <strong>Análisis de precios:</strong><br><br>` +
+      `He analizado <strong>${count} propiedades</strong> en nuestra base de datos.<br><br>` +
+      `• Precio medio por m²: <strong>${formatPrice(avgPpSqm)}/m²</strong><br>` +
+      `• Precio medio total: <strong>${formatPrice(avgPrice)}</strong><br>` +
+      `• Rango: ${formatPrice(minPrice)} — ${formatPrice(maxPrice)}<br>` +
+      `• Tamaño medio: <strong>${avgSize} m²</strong><br><br>` +
+      `¿Te gustaría ver las propiedades disponibles en una zona específica?`;
+  }
+  
+  // Investment advice
+  if (q.includes('invertir') || q.includes('inversión') || q.includes('invest')) {
+    const cheapAreas = {};
+    properties.forEach(p => {
+      const city = p.location?.city || 'Otro';
+      if (!cheapAreas[city]) cheapAreas[city] = [];
+      cheapAreas[city].push(p.price_per_sqm || 0);
+    });
+    
+    let areaText = Object.entries(cheapAreas)
+      .map(([city, prices]) => ({city, avg: Math.round(prices.reduce((a,b)=>a+b,0)/prices.length)}))
+      .sort((a,b) => a.avg - b.avg)
+      .slice(0, 5)
+      .map(a => `• <strong>${a.city}</strong>: ${formatPrice(a.avg)}/m²`)
+      .join('<br>');
+    
+    return `📈 <strong>Zonas con mejor potencial de inversión:</strong><br><br>` +
+      `Basándome en ${count} propiedades de nuestra base de datos, estas zonas tienen los precios más competitivos:<br><br>` +
+      areaText + '<br><br>' +
+      `Las zonas con precio por m² más bajo suelen ofrecer mayor potencial de revalorización. ¿Quieres que te muestre propiedades concretas en alguna de estas zonas?`;
+  }
+  
+  // Default: show properties
+  const top = properties.slice(0, 5);
+  let propCards = '<div class="chat-properties">';
+  top.forEach(p => {
+    propCards += `
+      <div class="chat-prop-card" onclick="showPropertyFromChat('${p._id}')">
+        ${p.images?.[0] ? `<img src="${p.images[0]}" alt="" onerror="this.style.display='none'">` : ''}
+        <div class="chat-prop-info">
+          <h5>${p.title}</h5>
+          <div class="price">${formatPrice(p.price)}</div>
+          <div class="meta">${p.features?.size_sqm || '—'} m² · ${p.features?.bedrooms || '—'} hab · ${p.location?.city || ''}</div>
+        </div>
+      </div>
+    `;
+  });
+  propCards += '</div>';
+  
+  return `He encontrado <strong>${count} propiedades</strong> que podrían interesarte.<br><br>` +
+    `📊 Precio medio: <strong>${formatPrice(avgPrice)}</strong> · Rango: ${formatPrice(minPrice)} — ${formatPrice(maxPrice)}<br>` +
+    `📏 Tamaño medio: <strong>${avgSize} m²</strong><br><br>` +
+    `Aquí tienes las mejores opciones:` + propCards;
+}
+
+function showPropertyFromChat(id) {
+  // Find in all fetched properties
+  showPage('properties');
+  setTimeout(() => {
+    const p = allProperties.find(x => x._id === id);
+    if (p) showPropertyDetail(id);
+  }, 300);
+}
+
+// ═══════════════════════════════════════
+// DASHBOARD PAGE
+// ═══════════════════════════════════════
+async function loadDashboard() {
+  try {
+    const [statsRes, propsRes] = await Promise.all([
+      fetch(`${API}/scraper/stats`),
+      fetch(`${API}/properties?limit=10&sort=-createdAt`)
+    ]);
+    
+    const stats = await statsRes.json();
+    const propsData = await propsRes.json();
+    const props = propsData.properties || propsData;
+    
+    statsData = stats;
+    
+    // Stats cards
+    document.getElementById('d-active').textContent = stats.active || 0;
+    
+    // Calc avg price
+    if (stats.by_city?.length) {
+      const totalProps = stats.by_city.reduce((s,c) => s + c.count, 0);
+      const totalValue = stats.by_city.reduce((s,c) => s + (c.avg_price * c.count), 0);
+      const avgPrice = Math.round(totalValue / totalProps);
+      document.getElementById('d-avgprice').textContent = formatPrice(avgPrice);
+    }
+    
+    document.getElementById('d-cities').textContent = stats.by_city?.length || 0;
+    document.getElementById('d-lastsync').textContent = stats.last_scraped_at 
+      ? new Date(stats.last_scraped_at).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' })
+      : 'Nunca';
+    
+    // City bars
+    renderCityBars(stats.by_city || []);
+    
+    // Price distribution
+    renderPriceDistribution(props);
+    
+    // Recent table
+    renderRecentTable(props);
+    
+  } catch (error) {
+    console.error('Dashboard error:', error);
+  }
+}
+
+function renderCityBars(cities) {
+  const max = Math.max(...cities.map(c => c.count));
+  document.getElementById('city-bars').innerHTML = cities
+    .sort((a,b) => b.count - a.count)
+    .slice(0, 10)
+    .map(c => `
+      <div class="city-bar-row">
+        <span class="city-name">${c.city}</span>
+        <div class="city-bar-track">
+          <div class="city-bar-fill" style="width: ${(c.count / max * 100)}%"></div>
+        </div>
+        <span class="city-count">${c.count}</span>
+        <span class="city-avg">${formatPrice(Math.round(c.avg_price))}</span>
+      </div>
+    `).join('');
+}
+
+function renderPriceDistribution(props) {
+  const ranges = [
+    { label: '< 100K€', min: 0, max: 100000 },
+    { label: '100K–200K€', min: 100000, max: 200000 },
+    { label: '200K–300K€', min: 200000, max: 300000 },
+    { label: '300K–500K€', min: 300000, max: 500000 },
+    { label: '500K–700K€', min: 500000, max: 700000 },
+    { label: '700K–1M€', min: 700000, max: 1000000 },
+    { label: '> 1M€', min: 1000000, max: Infinity },
+  ];
+  
+  // Fetch all for distribution
+  fetch(`${API}/properties?limit=100`).then(r => r.json()).then(data => {
+    const all = data.properties || data;
+    const counts = ranges.map(r => ({
+      ...r,
+      count: all.filter(p => p.price >= r.min && p.price < r.max).length
+    }));
+    const maxCount = Math.max(...counts.map(c => c.count));
+    
+    document.getElementById('price-dist').innerHTML = counts.map(c => `
+      <div class="price-range-row">
+        <span class="price-range-label">${c.label}</span>
+        <div class="price-range-bar">
+          <div class="price-range-fill" style="width: ${maxCount ? (c.count / maxCount * 100) : 0}%"></div>
+        </div>
+        <span class="price-range-count">${c.count}</span>
+      </div>
+    `).join('');
+  });
+}
+
+function renderRecentTable(props) {
+  document.getElementById('recent-tbody').innerHTML = props.slice(0, 8).map(p => `
+    <tr onclick="showPropertyDetail('${p._id}')" style="cursor:pointer">
+      <td>${truncate(p.title, 35)}</td>
+      <td>${p.location?.city || '—'}</td>
+      <td>${typeLabel(p.type)}</td>
+      <td class="td-price">${formatPrice(p.price)}</td>
+      <td>${p.features?.size_sqm || '—'}</td>
+      <td>${p.features?.bedrooms || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+async function refreshDashboard() {
+  loadDashboard();
+}
+
+async function runScraper() {
+  if (!confirm('¿Ejecutar scraper para Madrid? (Esto usará créditos de Apify)')) return;
+  
+  try {
+    const res = await fetch(`${API}/scraper/city/madrid`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operations: ['sale'], maxItems: 50 })
+    });
+    const data = await res.json();
+    alert('Scraper iniciado: ' + (data.message || JSON.stringify(data)));
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ═══════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════
+function formatPrice(n) {
+  if (!n) return '—';
+  return '€' + n.toLocaleString('es-ES');
+}
+
+function typeLabel(t) {
+  const map = { apartment: 'Piso', house: 'Casa', villa: 'Villa', penthouse: 'Ático', studio: 'Estudio', duplex: 'Dúplex', loft: 'Loft', land: 'Terreno', commercial: 'Comercial', other: 'Otro' };
+  return map[t] || t || 'Propiedad';
+}
+
+function truncate(s, n) {
+  if (!s) return '—';
+  return s.length > n ? s.substring(0, n) + '...' : s;
+}
+
+// ═══════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════
+loadProperties();
+
+// Keyboard shortcut: ESC to close modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
+</script>
+
+</body>
+</html>
