@@ -378,23 +378,31 @@ async function runScrapeImport(locations) {
   state.runs.unshift(run);
   if (state.runs.length > 20) state.runs.pop();
 
+  // Run in parallel batches of 8 to avoid overwhelming Apify
+  const BATCH_SIZE = 8;
   try {
-    for (const loc of locations) {
+    for (let i = 0; i < locations.length; i += BATCH_SIZE) {
+      const batch = locations.slice(i, i + BATCH_SIZE);
       console.log(
-        `\n🗺️  Scraping: ${loc.name} [${loc.operation || "rent"}] max:${loc.maxItems || 2500}`,
+        `\n🚀 Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batch.map((l) => l.name).join(", ")}`,
       );
-      try {
-        const actorRun = await triggerActorRun(loc);
-        const finishedRun = await waitForRun(actorRun.id);
-        const importResult = await importDataset(
-          finishedRun.defaultDatasetId,
-          loc,
-        );
-        run.results.push({ location: loc.name, ...importResult });
-      } catch (err) {
-        console.error(`   ❌ ${loc.name} failed:`, err.message);
-        run.results.push({ location: loc.name, error: err.message });
-      }
+      const batchResults = await Promise.all(
+        batch.map(async (loc) => {
+          try {
+            const actorRun = await triggerActorRun(loc);
+            const finishedRun = await waitForRun(actorRun.id);
+            const importResult = await importDataset(
+              finishedRun.defaultDatasetId,
+              loc,
+            );
+            return { location: loc.name, ...importResult };
+          } catch (err) {
+            console.error(`   ❌ ${loc.name} failed:`, err.message);
+            return { location: loc.name, error: err.message };
+          }
+        }),
+      );
+      run.results.push(...batchResults);
     }
     run.status = "completed";
     run.finishedAt = new Date();
