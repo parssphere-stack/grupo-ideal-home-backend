@@ -12,7 +12,7 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
-const Property = require("../models/Property");
+const Property = require("../models/property.model");
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN || "";
 const ACTOR_ID = "REcGj6dyoIJ9Z7aE6";
