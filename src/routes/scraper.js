@@ -25,10 +25,12 @@ const state = {
   lastCleanup: null,
   runs: [],
   schedulerActive: false,
+  autoLoopActive: false,
 };
 
 // ── Agency keyword blacklist ─────────────────────────────────
 const AGENCY_KEYWORDS = [
+  // Company types
   "inmobiliaria",
   "inmobiliario",
   "agencia",
@@ -37,16 +39,11 @@ const AGENCY_KEYWORDS = [
   "real estate",
   "realestate",
   "realty",
-  "properties",
-  "property",
-  "grupo",
-  "group",
-  "gestión",
-  "gestion",
+  "gestión inmobiliaria",
+  "gestion inmobiliaria",
+  // Generic "services" — only as standalone words (checked separately)
   "servicios",
-  "services",
   "soluciones",
-  "solutions",
   "inversiones",
   "inversión",
   "inversion",
@@ -55,6 +52,7 @@ const AGENCY_KEYWORDS = [
   "consultoria",
   "asociados",
   "partners",
+  // Known brands
   "century 21",
   "century21",
   "remax",
@@ -75,40 +73,44 @@ const AGENCY_KEYWORDS = [
   "habitaclia",
   "fotocasa",
   "pisos.com",
-  "finques",
-  "fincas",
-  "promot",
+  // Legal entity suffixes
   "s.l.",
   "s.l ",
   "s.a.",
   "s.a ",
   "s.l.u",
-  "sociedad",
-  "limitada",
-  "casas",
-  "pisos",
-  "villas",
-  "chalets",
-  "homes",
-  "living",
-  "habitat",
-  "asesor",
+  "sociedad limitada",
+  // Roles
+  "asesor inmobiliario",
   "broker",
   "promotor",
   "promotora",
-  "desarrollo",
+  "desarrollo inmobiliario",
   "construcciones",
-  "alquiler",
-  "compra",
-  "venta",
+  // Management
+  "administracion de fincas",
+  "gestion de alquileres",
   "compraventa",
-  "gestion",
-  "administracion",
 ];
 
 function isAgency(name = "", commercial = "") {
   const combined = `${name} ${commercial}`.toLowerCase();
+  // If commercial name (micrositeShortName) is set, it's always a professional
+  if (commercial && commercial.length > 2) return true;
   return AGENCY_KEYWORDS.some((kw) => combined.includes(kw));
+}
+
+// Check if listing is still active/valid
+function isExpired(item) {
+  // Idealista status: "good", "renew" = active; "expired", "sold" etc = inactive
+  if (item.status && !["good", "renew", ""].includes(item.status)) return true;
+  // If firstActivationDate is more than 90 days ago, likely stale
+  if (item.firstActivationDate) {
+    const daysOld =
+      (Date.now() - item.firstActivationDate) / (1000 * 60 * 60 * 24);
+    if (daysOld > 90) return true;
+  }
+  return false;
 }
 
 // ── Map Apify item → Property schema ────────────────────────
@@ -215,8 +217,15 @@ async function importDataset(datasetId, loc = null) {
     const ci = item.contactInfo || {};
     const id = String(item.propertyCode || item.adId || item.id || "");
     if (!id) continue;
+    // Skip expired listings
+    if (isExpired(item)) {
+      agencyIds.push(id);
+      continue;
+    }
+    // Skip if professional user or has agency microsite
     if (
       ci.userType !== "private" ||
+      ci.micrositeShortName ||
       isAgency(ci.contactName, ci.commercialName)
     ) {
       agencyIds.push(id);
@@ -408,6 +417,34 @@ async function runScrapeImport(locations) {
     run.finishedAt = new Date();
     state.lastRun = run;
     console.log("\n✅ Scrape cycle complete");
+
+    // Auto-loop: if still under 10k, schedule another bigrun after 2 min cooldown
+    if (state.autoLoopActive) {
+      const total = await Property.countDocuments({
+        status: "active",
+        is_particular: true,
+      });
+      console.log(`\n🔄 Auto-loop check: ${total}/10000`);
+      if (total < 10000) {
+        console.log(`⏳ Under 10k — scheduling next bigrun in 2 minutes...`);
+        setTimeout(
+          async () => {
+            try {
+              await runScrapeImport(BIG_SCRAPE_LOCATIONS);
+            } catch (err) {
+              console.error("Auto-loop bigrun failed:", err.message);
+              state.autoLoopActive = false;
+            }
+          },
+          2 * 60 * 1000,
+        );
+      } else {
+        console.log(
+          `✅ Target reached! ${total} particulares. Auto-loop stopped.`,
+        );
+        state.autoLoopActive = false;
+      }
+    }
   } finally {
     state.running = false;
   }
@@ -561,6 +598,7 @@ router.get("/status", async (req, res) => {
     res.json({
       running: state.running,
       schedulerActive: state.schedulerActive,
+      autoLoopActive: state.autoLoopActive,
       intervalHours: INTERVAL_HOURS,
       lastRun: state.lastRun,
       lastCleanup: state.lastCleanup,
@@ -614,9 +652,11 @@ router.post("/bigrun", async (req, res) => {
       BIG_SCRAPE_LOCATIONS.reduce((s, l) => s + (l.maxItems || 2500), 0) * 0.3,
     );
 
-    runScrapeImport(BIG_SCRAPE_LOCATIONS).catch((err) =>
-      console.error("Big run failed:", err.message),
-    );
+    runScrapeImport(BIG_SCRAPE_LOCATIONS).catch((err) => {
+      console.error("Big run failed:", err.message);
+      state.autoLoopActive = false;
+    });
+    state.autoLoopActive = true;
 
     res.json({
       message: "Big scrape started — this will take ~60-90 minutes",
@@ -653,6 +693,12 @@ router.post("/cleanup", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// POST /api/scraper/stop — stop auto-loop
+router.post("/stop", (req, res) => {
+  state.autoLoopActive = false;
+  res.json({ message: "Auto-loop stopped", running: state.running });
 });
 
 module.exports = router;
