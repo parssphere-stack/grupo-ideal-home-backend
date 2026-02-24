@@ -108,6 +108,19 @@ async function getMedians() {
 // AUTH ROUTES
 // ══════════════════════════════════════════════════════════════
 
+// POST /api/agents/setup — only works if NO agents exist yet
+router.post("/setup", async (req, res) => {
+  try {
+    const count = await Agent.countDocuments();
+    if (count > 0) return res.status(403).json({ error: "Setup already done" });
+    const { name, email, password } = req.body;
+    const agent = await Agent.create({ name, email, password, role: "admin" });
+    res.json({ ok: true, id: agent._id, name: agent.name, email: agent.email });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // POST /api/agents/login
 router.post("/login", async (req, res) => {
   try {
