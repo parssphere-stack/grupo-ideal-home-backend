@@ -237,11 +237,11 @@ async function importDataset(datasetId, loc = null) {
       seenIds.add(mapped.idealista_id);
       const before = await Property.findOne({
         idealista_id: mapped.idealista_id,
-      });
+      }).lean();
       await Property.findOneAndUpdate(
         { idealista_id: mapped.idealista_id },
         { $set: { ...mapped, status: "active" } },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
+        { upsert: true, new: true, setDefaultsOnInsert: true, strict: false },
       );
       before ? updatedCount++ : newCount++;
     } catch (err) {
