@@ -254,7 +254,7 @@ async function importDataset(datasetId, loc = null) {
   }
 
   let deactivatedCount = 0;
-  if (loc && seenIds.size > 50) {
+  if (loc && seenIds.size > 50 && newCount > 0) {
     const cityRegex = new RegExp(loc.name.split(" ")[0], "i");
     const query = {
       status: "active",
