@@ -663,4 +663,15 @@ router.post("/stop", (req, res) => {
   res.json({ message: "Auto-loop stopped", running: state.running });
 });
 
+// Export helper for index.js auto-resume on startup
+router.startAutoLoop = () => {
+  if (!state.autoLoopActive && !state.running) {
+    state.autoLoopActive = true;
+    runScrapeImport(BIG_SCRAPE_LOCATIONS).catch((err) => {
+      console.error("Auto-resume bigrun failed:", err.message);
+      state.autoLoopActive = false;
+    });
+  }
+};
+
 module.exports = router;

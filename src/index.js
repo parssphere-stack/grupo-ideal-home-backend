@@ -27,8 +27,9 @@ mongoose
   });
 
 // ── Routes ──────────────────────────────────────────────────
+const scraperRouter = require("./routes/scraper");
 app.use("/api/properties", require("./routes/properties"));
-app.use("/api/scraper", require("./routes/scraper"));
+app.use("/api/scraper", scraperRouter);
 app.use("/api/agents", require("./routes/agent.routes"));
 
 // Health check
@@ -45,4 +46,31 @@ app.listen(PORT, () => {
   console.log(`\n🏠 Grupo Ideal Home API`);
   console.log(`   http://localhost:${PORT}/api`);
   console.log(`   http://localhost:${PORT}/api/health\n`);
+
+  // Auto-resume scraper loop after DB is ready
+  mongoose.connection.once("open", async () => {
+    try {
+      const Property = require("./models/property.model");
+      const total = await Property.countDocuments({
+        status: "active",
+        is_particular: true,
+      });
+      console.log(`📊 DB has ${total} particulares`);
+      if (total < 10000) {
+        console.log(`🔄 Auto-resuming scraper loop (${total}/10000)...`);
+        if (scraperRouter.startAutoLoop) {
+          scraperRouter.startAutoLoop();
+        } else {
+          const axios = require("axios");
+          axios
+            .post(`http://localhost:${PORT}/api/scraper/bigrun`)
+            .catch(() => {});
+        }
+      } else {
+        console.log(`✅ Target reached (${total}/10000) - scraper idle`);
+      }
+    } catch (err) {
+      console.error("Auto-resume check failed:", err.message);
+    }
+  });
 });
