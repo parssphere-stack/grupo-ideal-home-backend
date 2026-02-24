@@ -30,7 +30,6 @@ const state = {
 
 // ── Agency keyword blacklist ─────────────────────────────────
 const AGENCY_KEYWORDS = [
-  // Company types
   "inmobiliaria",
   "inmobiliario",
   "agencia",
@@ -41,7 +40,6 @@ const AGENCY_KEYWORDS = [
   "realty",
   "gestión inmobiliaria",
   "gestion inmobiliaria",
-  // Generic "services" — only as standalone words (checked separately)
   "servicios",
   "soluciones",
   "inversiones",
@@ -52,7 +50,6 @@ const AGENCY_KEYWORDS = [
   "consultoria",
   "asociados",
   "partners",
-  // Known brands
   "century 21",
   "century21",
   "remax",
@@ -73,21 +70,18 @@ const AGENCY_KEYWORDS = [
   "habitaclia",
   "fotocasa",
   "pisos.com",
-  // Legal entity suffixes
   "s.l.",
   "s.l ",
   "s.a.",
   "s.a ",
   "s.l.u",
   "sociedad limitada",
-  // Roles
   "asesor inmobiliario",
   "broker",
   "promotor",
   "promotora",
   "desarrollo inmobiliario",
   "construcciones",
-  // Management
   "administracion de fincas",
   "gestion de alquileres",
   "compraventa",
@@ -95,16 +89,12 @@ const AGENCY_KEYWORDS = [
 
 function isAgency(name = "", commercial = "") {
   const combined = `${name} ${commercial}`.toLowerCase();
-  // If commercial name (micrositeShortName) is set, it's always a professional
   if (commercial && commercial.length > 2) return true;
   return AGENCY_KEYWORDS.some((kw) => combined.includes(kw));
 }
 
-// Check if listing is still active/valid
 function isExpired(item) {
-  // Idealista status: "good", "renew" = active; "expired", "sold" etc = inactive
   if (item.status && !["good", "renew", ""].includes(item.status)) return true;
-  // If firstActivationDate is more than 90 days ago, likely stale
   if (item.firstActivationDate) {
     const daysOld =
       (Date.now() - item.firstActivationDate) / (1000 * 60 * 60 * 24);
@@ -200,7 +190,6 @@ function mapItem(item) {
 }
 
 // ── Import Apify dataset ─────────────────────────────────────
-// loc = { name, operation } — used to find which existing listings to compare against
 async function importDataset(datasetId, loc = null) {
   console.log(`\n📦 Importing dataset: ${datasetId}`);
   const url = `https://api.apify.com/v2/datasets/${datasetId}/items?format=json&limit=10000`;
@@ -209,7 +198,6 @@ async function importDataset(datasetId, loc = null) {
   const items = res.data;
   console.log(`   ✅ Fetched ${items.length} items`);
 
-  // Separate particulares from agencies
   const particular = [];
   const agencyIds = [];
 
@@ -217,12 +205,10 @@ async function importDataset(datasetId, loc = null) {
     const ci = item.contactInfo || {};
     const id = String(item.propertyCode || item.adId || item.id || "");
     if (!id) continue;
-    // Skip expired listings
     if (isExpired(item)) {
       agencyIds.push(id);
       continue;
     }
-    // Skip if professional user or has agency microsite
     if (
       ci.userType !== "private" ||
       ci.micrositeShortName ||
@@ -237,15 +223,16 @@ async function importDataset(datasetId, loc = null) {
     `   🔍 Particular: ${particular.length} | Agency (skip): ${agencyIds.length}`,
   );
 
-  // Upsert particulares
   let newCount = 0,
     updatedCount = 0,
     errorCount = 0;
   const seenIds = new Set();
 
   for (const item of particular) {
+    // ✅ FIX: let mapped declared outside try so catch can access it
+    let mapped;
     try {
-      const mapped = mapItem(item);
+      mapped = mapItem(item);
       if (!mapped.idealista_id) continue;
       seenIds.add(mapped.idealista_id);
       const before = await Property.findOne({
@@ -253,7 +240,7 @@ async function importDataset(datasetId, loc = null) {
       });
       await Property.findOneAndUpdate(
         { idealista_id: mapped.idealista_id },
-        { $set: { ...mapped, status: "active" } }, // $set prevents replacement-mode validation errors
+        { $set: { ...mapped, status: "active" } },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       );
       before ? updatedCount++ : newCount++;
@@ -267,9 +254,6 @@ async function importDataset(datasetId, loc = null) {
     }
   }
 
-  // ── Smart deactivation ──────────────────────────────────────
-  // Any listing in THIS city+operation that was NOT in the scrape results
-  // was removed from Idealista → mark inactive
   let deactivatedCount = 0;
   if (loc && seenIds.size > 0) {
     const cityRegex = new RegExp(loc.name.split(" ")[0], "i");
@@ -278,32 +262,27 @@ async function importDataset(datasetId, loc = null) {
       is_particular: true,
       "location.city": cityRegex,
     };
-    if (loc.operation && loc.operation !== "rent,sale") {
+    if (loc.operation && loc.operation !== "rent,sale")
       query.operation = loc.operation;
-    }
 
-    // Also mark any agency IDs we found as inactive
     if (agencyIds.length > 0) {
       const agencyResult = await Property.updateMany(
         { idealista_id: { $in: agencyIds }, status: "active" },
         { $set: { status: "inactive", is_particular: false } },
       );
       deactivatedCount += agencyResult.modifiedCount;
-      if (agencyResult.modifiedCount > 0) {
+      if (agencyResult.modifiedCount > 0)
         console.log(
           `   🏢 Agency listings deactivated: ${agencyResult.modifiedCount}`,
         );
-      }
     }
 
-    // Find active listings in this zone not seen in scrape
     const existingIds = await Property.find(query)
       .select("idealista_id")
       .lean();
     const missingIds = existingIds
       .map((p) => p.idealista_id)
       .filter((id) => !seenIds.has(id));
-
     if (missingIds.length > 0) {
       const deactResult = await Property.updateMany(
         { idealista_id: { $in: missingIds } },
@@ -387,7 +366,6 @@ async function runScrapeImport(locations) {
   state.runs.unshift(run);
   if (state.runs.length > 20) state.runs.pop();
 
-  // Run in parallel batches of 8 to avoid overwhelming Apify
   const BATCH_SIZE = 8;
   try {
     for (let i = 0; i < locations.length; i += BATCH_SIZE) {
@@ -418,7 +396,6 @@ async function runScrapeImport(locations) {
     state.lastRun = run;
     console.log("\n✅ Scrape cycle complete");
 
-    // Auto-loop: if still under 10k, schedule another bigrun after 2 min cooldown
     if (state.autoLoopActive) {
       const total = await Property.countDocuments({
         status: "active",
@@ -451,13 +428,9 @@ async function runScrapeImport(locations) {
   return run;
 }
 
-// ── Cleanup: mark agency listings inactive ───────────────────
-// NOTE: expired listings are handled automatically in importDataset
-// (listings not seen in scrape → inactive)
-// This cleanup just catches any agency that slipped through the filter
+// ── Cleanup ──────────────────────────────────────────────────
 async function runCleanup() {
   console.log("\n🧹 Running agency cleanup...");
-
   const active = await Property.find({ status: "active" })
     .select("_id contact")
     .lean();
@@ -471,7 +444,6 @@ async function runCleanup() {
       agencyFound++;
     }
   }
-
   const result = { agencyRemoved: agencyFound, at: new Date() };
   state.lastCleanup = result;
   console.log(`   🏢 Agency listings removed: ${agencyFound}`);
@@ -479,8 +451,6 @@ async function runCleanup() {
 }
 
 // ── Location configs ─────────────────────────────────────────
-
-// Daily maintenance — refresh existing listings (rent priority)
 const DAILY_LOCATIONS = [
   { name: "malaga", operation: "rent", maxItems: 2500 },
   { name: "madrid", operation: "rent", maxItems: 2500 },
@@ -493,43 +463,28 @@ const DAILY_LOCATIONS = [
   { name: "madrid", operation: "sale", maxItems: 1000 },
 ];
 
-// One-time big scrape — reach 10k listings
-// Run once via POST /api/scraper/bigrun
 const BIG_SCRAPE_LOCATIONS = [
-  // ── MÁLAGA COSTA — rent priority (target ~5,500 particulares) ──
   { name: "malaga", operation: "rent", maxItems: 2500 },
   { name: "malaga", operation: "sale", maxItems: 2000 },
-
-  // Benalmadena (arroyo de la miel + costa)
   { name: "benalmadena", operation: "rent", maxItems: 2500 },
   { name: "benalmadena costa", operation: "rent", maxItems: 2500 },
   { name: "arroyo de la miel", operation: "rent", maxItems: 2500 },
   { name: "benalmadena", operation: "sale", maxItems: 1500 },
-
-  // Fuengirola (los boliches + mijas costa + higuerón)
   { name: "fuengirola", operation: "rent", maxItems: 2500 },
   { name: "los boliches", operation: "rent", maxItems: 2500 },
   { name: "mijas costa", operation: "rent", maxItems: 2500 },
   { name: "higueron fuengirola", operation: "rent", maxItems: 2500 },
   { name: "higueron fuengirola", operation: "sale", maxItems: 2000 },
   { name: "fuengirola", operation: "sale", maxItems: 1500 },
-
-  // Torremolinos
   { name: "torremolinos", operation: "rent", maxItems: 2500 },
   { name: "torremolinos", operation: "sale", maxItems: 1000 },
-
-  // Marbella + Estepona
   { name: "marbella", operation: "rent", maxItems: 2500 },
   { name: "marbella", operation: "sale", maxItems: 1500 },
   { name: "estepona", operation: "rent", maxItems: 2500 },
   { name: "san pedro de alcantara", operation: "rent", maxItems: 1500 },
-
-  // Nerja + Este de Málaga
   { name: "nerja", operation: "rent", maxItems: 2000 },
   { name: "velez malaga", operation: "rent", maxItems: 1500 },
   { name: "rincon de la victoria", operation: "rent", maxItems: 1500 },
-
-  // ── MADRID — rent + sale (target ~2,500 particulares) ──
   { name: "madrid", operation: "rent", maxItems: 2500 },
   { name: "madrid", operation: "sale", maxItems: 2500 },
   { name: "getafe", operation: "rent", maxItems: 1500 },
@@ -538,13 +493,12 @@ const BIG_SCRAPE_LOCATIONS = [
   { name: "mostoles", operation: "rent", maxItems: 1000 },
 ];
 
-// ── Scheduler (daily) ────────────────────────────────────────
+// ── Scheduler ────────────────────────────────────────────────
 function startScheduler() {
   if (state.schedulerActive) return;
   state.schedulerActive = true;
   const intervalMs = INTERVAL_HOURS * 60 * 60 * 1000;
   console.log(`⏰ Scraper scheduled every ${INTERVAL_HOURS}h`);
-
   const tick = async () => {
     console.log("\n⏰ Scheduled daily scrape starting...");
     try {
@@ -554,18 +508,13 @@ function startScheduler() {
       console.error("Scheduled scrape failed:", err.message);
     }
   };
-
-  if (process.env.SCRAPE_ON_START === "true") {
-    setTimeout(tick, 5000);
-  }
+  if (process.env.SCRAPE_ON_START === "true") setTimeout(tick, 5000);
   setInterval(tick, intervalMs);
 }
 
 if (APIFY_TOKEN) startScheduler();
 
 // ── Routes ────────────────────────────────────────────────────
-
-// GET /api/scraper/status
 router.get("/status", async (req, res) => {
   try {
     const total = await Property.countDocuments({
@@ -612,10 +561,8 @@ router.get("/status", async (req, res) => {
   }
 });
 
-// GET /api/scraper/runs
 router.get("/runs", (req, res) => res.json(state.runs));
 
-// POST /api/scraper/run — daily maintenance
 router.post("/run", async (req, res) => {
   try {
     if (!APIFY_TOKEN)
@@ -635,38 +582,20 @@ router.post("/run", async (req, res) => {
   }
 });
 
-// POST /api/scraper/bigrun — one-time to reach 10k
 router.post("/bigrun", async (req, res) => {
   try {
     if (!APIFY_TOKEN)
       return res.status(400).json({ error: "APIFY_TOKEN not configured" });
     if (state.running)
       return res.status(409).json({ error: "Already running" });
-
-    const estimatedCost = (
-      (BIG_SCRAPE_LOCATIONS.reduce((s, l) => s + (l.maxItems || 2500), 0) /
-        2500) *
-      0.035
-    ).toFixed(2);
-    const estParticulares = Math.round(
-      BIG_SCRAPE_LOCATIONS.reduce((s, l) => s + (l.maxItems || 2500), 0) * 0.3,
-    );
-
     runScrapeImport(BIG_SCRAPE_LOCATIONS).catch((err) => {
       console.error("Big run failed:", err.message);
       state.autoLoopActive = false;
     });
     state.autoLoopActive = true;
-
     res.json({
       message: "Big scrape started — this will take ~60-90 minutes",
       zones: BIG_SCRAPE_LOCATIONS.length,
-      totalRawItems: BIG_SCRAPE_LOCATIONS.reduce(
-        (s, l) => s + (l.maxItems || 2500),
-        0,
-      ),
-      estimatedParticulares: estParticulares,
-      estimatedCost: `$${estimatedCost}`,
       locations: BIG_SCRAPE_LOCATIONS.map((l) => `${l.name} [${l.operation}]`),
     });
   } catch (err) {
@@ -674,7 +603,6 @@ router.post("/bigrun", async (req, res) => {
   }
 });
 
-// POST /api/scraper/import/:datasetId
 router.post("/import/:datasetId", async (req, res) => {
   try {
     const result = await importDataset(req.params.datasetId);
@@ -685,7 +613,6 @@ router.post("/import/:datasetId", async (req, res) => {
   }
 });
 
-// POST /api/scraper/cleanup — remove agency listings
 router.post("/cleanup", async (req, res) => {
   try {
     const result = await runCleanup();
@@ -695,7 +622,6 @@ router.post("/cleanup", async (req, res) => {
   }
 });
 
-// POST /api/scraper/stop — stop auto-loop
 router.post("/stop", (req, res) => {
   state.autoLoopActive = false;
   res.json({ message: "Auto-loop stopped", running: state.running });
