@@ -254,7 +254,7 @@ async function importDataset(datasetId, loc = null) {
   }
 
   let deactivatedCount = 0;
-  if (loc && seenIds.size > 0) {
+  if (loc && seenIds.size > 50) {
     const cityRegex = new RegExp(loc.name.split(" ")[0], "i");
     const query = {
       status: "active",
@@ -400,9 +400,38 @@ async function runScrapeImport(locations) {
         status: "active",
         is_particular: true,
       });
-      console.log(`\n🔄 Auto-loop check: ${total}/10000`);
-      if (total < 10000) {
-        console.log(`⏳ Under 10k — scheduling next bigrun in 2 minutes...`);
+
+      // Check if all runs failed (e.g. 403 / quota exceeded)
+      const allFailed = run.results.every((r) => r.error);
+      // Check if no new listings found across all runs
+      const totalNew = run.results.reduce(
+        (sum, r) => sum + (r.newCount || 0),
+        0,
+      );
+
+      console.log(
+        `\n🔄 Auto-loop check: ${total}/10000 | newCount: ${totalNew} | allFailed: ${allFailed}`,
+      );
+
+      if (allFailed) {
+        console.log(
+          `❌ All runs failed — stopping auto-loop to prevent wasted credits`,
+        );
+        state.autoLoopActive = false;
+      } else if (totalNew === 0) {
+        console.log(
+          `⏹️ No new listings found — stopping auto-loop (data saturated)`,
+        );
+        state.autoLoopActive = false;
+      } else if (total >= 10000) {
+        console.log(
+          `✅ Target reached! ${total} particulares. Auto-loop stopped.`,
+        );
+        state.autoLoopActive = false;
+      } else {
+        console.log(
+          `⏳ ${totalNew} new found — scheduling next bigrun in 5 minutes...`,
+        );
         setTimeout(
           async () => {
             try {
@@ -412,13 +441,8 @@ async function runScrapeImport(locations) {
               state.autoLoopActive = false;
             }
           },
-          2 * 60 * 1000,
+          5 * 60 * 1000,
         );
-      } else {
-        console.log(
-          `✅ Target reached! ${total} particulares. Auto-loop stopped.`,
-        );
-        state.autoLoopActive = false;
       }
     }
   } finally {
