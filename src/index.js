@@ -29,6 +29,7 @@ mongoose
 // ── Routes ──────────────────────────────────────────────────
 app.use("/api/properties", require("./routes/properties"));
 app.use("/api/scraper", require("./routes/scraper"));
+app.use("/api/agents", require("./routes/agent.routes"));
 
 // Health check
 app.get("/api/health", (req, res) => {
