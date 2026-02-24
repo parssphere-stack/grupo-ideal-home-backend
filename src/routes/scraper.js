@@ -229,7 +229,6 @@ async function importDataset(datasetId, loc = null) {
   const seenIds = new Set();
 
   for (const item of particular) {
-    // ✅ FIX: let mapped declared outside try so catch can access it
     let mapped;
     try {
       mapped = mapItem(item);
@@ -511,7 +510,7 @@ const BIG_SCRAPE_LOCATIONS = [
   { name: "velez malaga", operation: "rent", maxItems: 1500 },
   { name: "rincon de la victoria", operation: "rent", maxItems: 1500 },
 
-  // ── Interior ──────────────────────────────────────────────
+  // ── Interior Málaga ───────────────────────────────────────
   { name: "alhaurin de la torre", operation: "rent", maxItems: 1500 },
   { name: "alhaurin de la torre", operation: "sale", maxItems: 1000 },
   { name: "alhaurin el grande", operation: "rent", maxItems: 1000 },
@@ -520,13 +519,53 @@ const BIG_SCRAPE_LOCATIONS = [
   { name: "antequera", operation: "rent", maxItems: 1000 },
   { name: "ronda malaga", operation: "rent", maxItems: 1000 },
 
-  // ── Madrid ────────────────────────────────────────────────
+  // ── Madrid ciudad ─────────────────────────────────────────
   { name: "madrid", operation: "rent", maxItems: 2500 },
   { name: "madrid", operation: "sale", maxItems: 2500 },
+
+  // ── Madrid barrios ────────────────────────────────────────
+  { name: "chamberi madrid", operation: "rent", maxItems: 2500 },
+  { name: "chamberi madrid", operation: "sale", maxItems: 1500 },
+  { name: "salamanca madrid", operation: "rent", maxItems: 2500 },
+  { name: "salamanca madrid", operation: "sale", maxItems: 1500 },
+  { name: "retiro madrid", operation: "rent", maxItems: 2500 },
+  { name: "retiro madrid", operation: "sale", maxItems: 1500 },
+  { name: "centro madrid", operation: "rent", maxItems: 2500 },
+  { name: "centro madrid", operation: "sale", maxItems: 1500 },
+  { name: "latina madrid", operation: "rent", maxItems: 2000 },
+  { name: "latina madrid", operation: "sale", maxItems: 1000 },
+  { name: "carabanchel madrid", operation: "rent", maxItems: 2000 },
+  { name: "carabanchel madrid", operation: "sale", maxItems: 1000 },
+  { name: "vallecas madrid", operation: "rent", maxItems: 2000 },
+  { name: "tetuan madrid", operation: "rent", maxItems: 2000 },
+  { name: "tetuan madrid", operation: "sale", maxItems: 1000 },
+  { name: "hortaleza madrid", operation: "rent", maxItems: 1500 },
+  { name: "fuencarral madrid", operation: "rent", maxItems: 1500 },
+  { name: "ciudad lineal madrid", operation: "rent", maxItems: 1500 },
+  { name: "moncloa madrid", operation: "rent", maxItems: 1500 },
+  { name: "arganzuela madrid", operation: "rent", maxItems: 1500 },
+  { name: "puente de vallecas", operation: "rent", maxItems: 1500 },
+  { name: "san blas madrid", operation: "rent", maxItems: 1000 },
+  { name: "usera madrid", operation: "rent", maxItems: 1000 },
+  { name: "villaverde madrid", operation: "rent", maxItems: 1000 },
+  { name: "moratalaz madrid", operation: "rent", maxItems: 1000 },
+
+  // ── Madrid municipios ─────────────────────────────────────
   { name: "getafe", operation: "rent", maxItems: 1500 },
   { name: "alcala de henares", operation: "rent", maxItems: 1500 },
   { name: "leganes", operation: "rent", maxItems: 1000 },
   { name: "mostoles", operation: "rent", maxItems: 1000 },
+  { name: "alcorcon", operation: "rent", maxItems: 1500 },
+  { name: "fuenlabrada", operation: "rent", maxItems: 1500 },
+  { name: "parla", operation: "rent", maxItems: 1000 },
+  { name: "torrejon de ardoz", operation: "rent", maxItems: 1500 },
+  { name: "pozuelo de alarcon", operation: "rent", maxItems: 1500 },
+  { name: "pozuelo de alarcon", operation: "sale", maxItems: 1000 },
+  { name: "majadahonda", operation: "rent", maxItems: 1500 },
+  { name: "majadahonda", operation: "sale", maxItems: 1000 },
+  { name: "las rozas madrid", operation: "rent", maxItems: 1500 },
+  { name: "collado villalba", operation: "rent", maxItems: 1000 },
+  { name: "boadilla del monte", operation: "rent", maxItems: 1000 },
 ];
 
 // ── Scheduler ────────────────────────────────────────────────
