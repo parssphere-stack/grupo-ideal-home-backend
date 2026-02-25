@@ -314,16 +314,18 @@ async function importDataset(datasetId, loc = null) {
 async function triggerActorRun(location) {
   if (!APIFY_TOKEN) throw new Error("APIFY_TOKEN not set");
   // Support URL-based scraping (with price filters) or location name
-  const input = location.startUrl ? {
-    startUrls: [{ url: location.startUrl }],
-    maxItems: location.maxItems || 2500,
-  } : {
-    locationName: location.name,
-    country: "es",
-    operation: location.operation || "rent",
-    maxItems: location.maxItems || 2500,
-    userType: "private",
-  };
+  const input = location.startUrl
+    ? {
+        startUrls: [{ url: location.startUrl }],
+        maxItems: location.maxItems || 2500,
+      }
+    : {
+        locationName: location.name,
+        country: "es",
+        operation: location.operation || "rent",
+        maxItems: location.maxItems || 2500,
+        userType: "private",
+      };
   const res = await axios.post(
     `https://api.apify.com/v2/acts/${ACTOR_ID}/runs`,
     input,
@@ -406,23 +408,36 @@ async function runScrapeImport(locations) {
       });
 
       // Check if all runs failed (e.g. 403 / quota exceeded)
-      const allFailed = run.results.every(r => r.error);
+      const allFailed = run.results.every((r) => r.error);
       // Check if no new listings found across all runs
-      const totalNew = run.results.reduce((sum, r) => sum + (r.newCount || 0), 0);
+      const totalNew = run.results.reduce(
+        (sum, r) => sum + (r.newCount || 0),
+        0,
+      );
 
-      console.log(`\n🔄 Auto-loop check: ${total}/10000 | newCount: ${totalNew} | allFailed: ${allFailed}`);
+      console.log(
+        `\n🔄 Auto-loop check: ${total}/10000 | newCount: ${totalNew} | allFailed: ${allFailed}`,
+      );
 
       if (allFailed) {
-        console.log(`❌ All runs failed — stopping auto-loop to prevent wasted credits`);
+        console.log(
+          `❌ All runs failed — stopping auto-loop to prevent wasted credits`,
+        );
         state.autoLoopActive = false;
       } else if (totalNew === 0) {
-        console.log(`⏹️ No new listings found — stopping auto-loop (data saturated)`);
+        console.log(
+          `⏹️ No new listings found — stopping auto-loop (data saturated)`,
+        );
         state.autoLoopActive = false;
       } else if (total >= 10000) {
-        console.log(`✅ Target reached! ${total} particulares. Auto-loop stopped.`);
+        console.log(
+          `✅ Target reached! ${total} particulares. Auto-loop stopped.`,
+        );
         state.autoLoopActive = false;
       } else {
-        console.log(`⏳ ${totalNew} new found — scheduling next bigrun in 5 minutes...`);
+        console.log(
+          `⏳ ${totalNew} new found — scheduling next bigrun in 5 minutes...`,
+        );
         setTimeout(
           async () => {
             try {
@@ -478,39 +493,314 @@ const DAILY_LOCATIONS = [
 ];
 
 const BIG_SCRAPE_LOCATIONS = [
-  // ── Málaga ciudad — SALE > 150k ───────────────────────────
-  { name: "malaga", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/malaga/con-precio-desde_150000/", maxItems: 5000 },
-  { name: "malaga este", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/malaga/este/con-precio-desde_150000/", maxItems: 3000 },
-  { name: "teatinos malaga", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/malaga/teatinos-universidad/con-precio-desde_150000/", maxItems: 3000 },
-  { name: "pedregalejo malaga", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/malaga/pedregalejo-el-palo/con-precio-desde_150000/", maxItems: 3000 },
+  // ── Málaga ciudad ─────────────────────────────────────────
+  {
+    name: "malaga",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/malaga/con-precio-desde_80000/",
+    maxItems: 5000,
+  },
+  {
+    name: "malaga este",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/malaga/este/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "teatinos malaga",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/malaga/teatinos-universidad/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "pedregalejo malaga",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/malaga/pedregalejo-el-palo/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "churriana malaga",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/malaga/churriana/",
+    maxItems: 2000,
+  },
+  {
+    name: "campanillas malaga",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/malaga/campanillas/",
+    maxItems: 2000,
+  },
+  {
+    name: "puerto de la torre malaga",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/malaga/puerto-de-la-torre/",
+    maxItems: 2000,
+  },
 
-  // ── Torremolinos / Benalmádena — SALE > 150k ──────────────
-  { name: "torremolinos", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/torremolinos-malaga/con-precio-desde_150000/", maxItems: 3000 },
-  { name: "benalmadena", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/benalmadena-malaga/con-precio-desde_150000/", maxItems: 3000 },
+  // ── Torremolinos / Benalmádena ────────────────────────────
+  {
+    name: "torremolinos",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/torremolinos-malaga/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "benalmadena",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/benalmadena-malaga/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "benalmadena costa",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/benalmadena-malaga/benalmadena-costa/con-precio-desde_80000/",
+    maxItems: 2500,
+  },
+  {
+    name: "arroyo de la miel",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/benalmadena-malaga/arroyo-de-la-miel/con-precio-desde_80000/",
+    maxItems: 2500,
+  },
 
-  // ── Fuengirola / Mijas — SALE > 150k ─────────────────────
-  { name: "fuengirola", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/fuengirola-malaga/con-precio-desde_150000/", maxItems: 3000 },
-  { name: "mijas costa", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/mijas-malaga/con-precio-desde_150000/", maxItems: 3000 },
+  // ── Fuengirola / Mijas ────────────────────────────────────
+  {
+    name: "fuengirola",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/fuengirola-malaga/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "los boliches fuengirola",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/fuengirola-malaga/los-boliches/con-precio-desde_80000/",
+    maxItems: 2500,
+  },
+  {
+    name: "mijas costa",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/mijas-malaga/mijas-costa/con-precio-desde_80000/",
+    maxItems: 3000,
+  },
+  {
+    name: "mijas pueblo",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/mijas-malaga/mijas-pueblo/con-precio-desde_80000/",
+    maxItems: 2500,
+  },
+  {
+    name: "calahonda mijas",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/mijas-malaga/calahonda/",
+    maxItems: 2000,
+  },
+  {
+    name: "higueron fuengirola",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/fuengirola-malaga/el-higueron/",
+    maxItems: 2000,
+  },
 
-  // ── Marbella — SALE > 300k ────────────────────────────────
-  { name: "marbella", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/marbella-malaga/con-precio-desde_300000/", maxItems: 5000 },
-  { name: "nueva andalucia marbella", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/marbella-malaga/nueva-andalucia/con-precio-desde_300000/", maxItems: 3000 },
-  { name: "san pedro de alcantara", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/marbella-malaga/san-pedro-de-alcantara/con-precio-desde_200000/", maxItems: 3000 },
+  // ── Marbella ──────────────────────────────────────────────
+  {
+    name: "marbella",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/marbella-malaga/con-precio-desde_200000/",
+    maxItems: 5000,
+  },
+  {
+    name: "nueva andalucia marbella",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/marbella-malaga/nueva-andalucia/con-precio-desde_150000/",
+    maxItems: 3000,
+  },
+  {
+    name: "san pedro de alcantara",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/marbella-malaga/san-pedro-de-alcantara/con-precio-desde_100000/",
+    maxItems: 3000,
+  },
+  {
+    name: "marbella este",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/marbella-malaga/marbella-este/con-precio-desde_150000/",
+    maxItems: 2500,
+  },
+  {
+    name: "las chapas marbella",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/marbella-malaga/las-chapas/",
+    maxItems: 2000,
+  },
 
-  // ── Estepona / Benahavís — SALE > 200k ───────────────────
-  { name: "estepona", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/estepona-malaga/con-precio-desde_200000/", maxItems: 3000 },
-  { name: "benahavis", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/benahavis-malaga/con-precio-desde_300000/", maxItems: 2500 },
-  { name: "sotogrande", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/san-roque-cadiz/sotogrande/con-precio-desde_300000/", maxItems: 2500 },
+  // ── Estepona / Benahavís / Manilva ───────────────────────
+  {
+    name: "estepona",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/estepona-malaga/con-precio-desde_100000/",
+    maxItems: 3000,
+  },
+  {
+    name: "estepona este",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/estepona-malaga/estepona-este/",
+    maxItems: 2500,
+  },
+  {
+    name: "benahavis",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/benahavis-malaga/con-precio-desde_150000/",
+    maxItems: 2500,
+  },
+  {
+    name: "manilva",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/manilva-malaga/con-precio-desde_80000/",
+    maxItems: 2000,
+  },
+  {
+    name: "casares",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/casares-malaga/con-precio-desde_80000/",
+    maxItems: 2000,
+  },
+  {
+    name: "sotogrande",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/san-roque-cadiz/sotogrande/con-precio-desde_150000/",
+    maxItems: 2500,
+  },
 
-  // ── Axarquía — SALE > 100k ────────────────────────────────
-  { name: "nerja", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/nerja-malaga/con-precio-desde_100000/", maxItems: 3000 },
-  { name: "torre del mar", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/velez-malaga/torre-del-mar/con-precio-desde_100000/", maxItems: 2500 },
-  { name: "rincon de la victoria", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/rincon-de-la-victoria-malaga/con-precio-desde_100000/", maxItems: 2500 },
+  // ── Axarquía ──────────────────────────────────────────────
+  {
+    name: "nerja",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/nerja-malaga/",
+    maxItems: 3000,
+  },
+  {
+    name: "frigiliana",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/frigiliana-malaga/",
+    maxItems: 2000,
+  },
+  {
+    name: "torrox",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/torrox-malaga/",
+    maxItems: 2000,
+  },
+  {
+    name: "torre del mar",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/velez-malaga/torre-del-mar/",
+    maxItems: 2500,
+  },
+  {
+    name: "velez malaga",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/velez-malaga/",
+    maxItems: 2500,
+  },
+  {
+    name: "rincon de la victoria",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/rincon-de-la-victoria-malaga/",
+    maxItems: 2500,
+  },
+  {
+    name: "almunecar granada",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/almunecar-granada/",
+    maxItems: 2500,
+  },
+  {
+    name: "la herradura granada",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/almunecar-granada/la-herradura/",
+    maxItems: 2000,
+  },
+  {
+    name: "salobrena granada",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/salobrena-granada/",
+    maxItems: 2000,
+  },
+  {
+    name: "motril granada",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/motril-granada/",
+    maxItems: 2500,
+  },
 
-  // ── Interior Málaga — SALE > 80k ─────────────────────────
-  { name: "alhaurin de la torre", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/alhaurin-de-la-torre-malaga/con-precio-desde_80000/", maxItems: 2500 },
-  { name: "coin malaga", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/coin-malaga/con-precio-desde_80000/", maxItems: 2500 },
-  { name: "ronda malaga", operation: "sale", startUrl: "https://www.idealista.com/venta-viviendas/ronda-malaga/con-precio-desde_80000/", maxItems: 2500 },
+  // ── Interior Málaga ───────────────────────────────────────
+  {
+    name: "alhaurin de la torre",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/alhaurin-de-la-torre-malaga/",
+    maxItems: 2500,
+  },
+  {
+    name: "alhaurin el grande",
+    operation: "sale",
+    startUrl:
+      "https://www.idealista.com/venta-viviendas/alhaurin-el-grande-malaga/",
+    maxItems: 2000,
+  },
+  {
+    name: "coin malaga",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/coin-malaga/",
+    maxItems: 2500,
+  },
+  {
+    name: "mijas interior",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/mijas-malaga/",
+    maxItems: 2500,
+  },
+  {
+    name: "antequera",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/antequera-malaga/",
+    maxItems: 2000,
+  },
+  {
+    name: "ronda malaga",
+    operation: "sale",
+    startUrl: "https://www.idealista.com/venta-viviendas/ronda-malaga/",
+    maxItems: 2500,
+  },
 ];
 
 // ── Scheduler ────────────────────────────────────────────────
