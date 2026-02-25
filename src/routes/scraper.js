@@ -342,6 +342,7 @@ async function triggerActorRun(location) {
     ? {
         startUrls: [{ url: location.startUrl }],
         maxItems: location.maxItems || 2500,
+        userType: "private",
       }
     : {
         locationName: location.name,
