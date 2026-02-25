@@ -103,6 +103,21 @@ function isExpired(item) {
   return false;
 }
 
+// ── Detect province from coordinates ────────────────────────
+function detectProvince(lat, lon) {
+  if (!lat || !lon) return null;
+  // Málaga province bounding box
+  if (lat >= 36.2 && lat <= 37.3 && lon >= -5.6 && lon <= -3.8) return "Málaga";
+  // Madrid province bounding box
+  if (lat >= 39.8 && lat <= 41.2 && lon >= -4.6 && lon <= -3.0) return "Madrid";
+  // Granada
+  if (lat >= 36.7 && lat <= 38.0 && lon >= -4.1 && lon <= -2.5)
+    return "Granada";
+  // Cádiz (Sotogrande zone)
+  if (lat >= 35.9 && lat <= 36.8 && lon >= -5.9 && lon <= -5.0) return "Cádiz";
+  return null;
+}
+
 // ── Map Apify item → Property schema ────────────────────────
 function mapItem(item) {
   const typeMap = {
@@ -153,15 +168,24 @@ function mapItem(item) {
       (item.price && item.size ? Math.round(item.price / item.size) : null),
     type: typeMap[rawType] || "other",
     operation: (item.operation || "sale").toLowerCase(),
-    location: {
-      address: item.address || "",
-      city: item.municipality || item.location?.city || "",
-      district: item.district || item.location?.district || "",
-      neighborhood: item.neighborhood || "",
-      province: item.province || item.location?.province || "",
-      latitude: item.latitude || item.location?.latitude || null,
-      longitude: item.longitude || item.location?.longitude || null,
-    },
+    location: (() => {
+      const lat = item.latitude || item.location?.latitude || null;
+      const lon = item.longitude || item.location?.longitude || null;
+      const province =
+        item.province ||
+        item.location?.province ||
+        detectProvince(lat, lon) ||
+        "";
+      return {
+        address: item.address || "",
+        city: item.municipality || item.location?.city || "",
+        district: item.district || item.location?.district || "",
+        neighborhood: item.neighborhood || "",
+        province,
+        latitude: lat,
+        longitude: lon,
+      };
+    })(),
     features: {
       size_sqm: item.size || f.size_sqm || null,
       bedrooms: item.rooms || f.bedrooms || null,
