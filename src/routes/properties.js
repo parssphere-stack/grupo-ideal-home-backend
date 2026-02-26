@@ -19,7 +19,7 @@
  *   is_exterior   — "1"
  *   sort          — "price_asc" | "price_desc" | "newest" | "size_desc" | "relevance"
  *   page          — number (default 1)
- *   limit         — number (default 24, max 3000)
+ *   limit         — number (default 24, max 10000)
  *   lat, lng, radius_km — geo filter
  */
 
@@ -118,7 +118,7 @@ router.get("/", async (req, res) => {
     sort = sortMap[sortParam] || sort;
 
     // ── Pagination ───────────────────────────────────────────
-    const limit = Math.min(parseInt(q.limit) || 24, 3000);
+    const limit = Math.min(parseInt(q.limit) || 24, 10000);
     const page = Math.max(parseInt(q.page) || 1, 1);
     const skip = (page - 1) * limit;
 
@@ -265,7 +265,7 @@ router.get("/stats", async (req, res) => {
             1200,
             1500,
             2000,
-            3000,
+            10000,
             5000,
             Infinity,
           ],
