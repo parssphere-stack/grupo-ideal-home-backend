@@ -9,6 +9,11 @@ const agentSchema = new mongoose.Schema(
     role: { type: String, enum: ["agent", "admin"], default: "agent" },
     active: { type: Boolean, default: true },
     avatar: String, // initials color
+    assignedProperties: [
+      { type: mongoose.Schema.Types.ObjectId, ref: "Property" },
+    ], // max 50
+    assignedAt: Date,
+    assignedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Agent" },
   },
   { timestamps: true },
 );

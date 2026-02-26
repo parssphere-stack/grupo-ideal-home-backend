@@ -377,4 +377,116 @@ router.get("/stats", auth, async (req, res) => {
   }
 });
 
+// ── Admin: assign properties to agent ───────────────────────
+// POST /api/agents/assign  { agentId, propertyIds: [...] }  max 50
+router.post("/assign", auth, adminOnly, async (req, res) => {
+  try {
+    const { agentId, propertyIds } = req.body;
+    if (!agentId || !Array.isArray(propertyIds))
+      return res
+        .status(400)
+        .json({ error: "agentId and propertyIds required" });
+    if (propertyIds.length > 50)
+      return res.status(400).json({ error: "Max 50 properties per agent" });
+
+    const agent = await Agent.findByIdAndUpdate(
+      agentId,
+      {
+        assignedProperties: propertyIds,
+        assignedAt: new Date(),
+        assignedBy: req.agent.id,
+      },
+      { new: true },
+    ).select("-password");
+
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    res.json({ success: true, agent, count: propertyIds.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: get all agents with their assigned properties ─────
+router.get("/agents-full", auth, adminOnly, async (req, res) => {
+  try {
+    const agents = await Agent.find({ role: "agent" })
+      .select("-password")
+      .populate(
+        "assignedProperties",
+        "title price operation propertyType address images idealista_id",
+      )
+      .lean();
+    res.json(agents);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Agent: get my assigned properties (with contact info) ────
+router.get("/my-properties", auth, async (req, res) => {
+  try {
+    const agent = await Agent.findById(req.agent.id)
+      .populate({
+        path: "assignedProperties",
+        match: { status: "active" },
+        select:
+          "title price operation propertyType address images idealista_id rooms size floor hasLift exterior hasTerrace hasPool contactInfo url scraped_at",
+      })
+      .lean();
+
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    // Get lead status for each property
+    const propIds = (agent.assignedProperties || []).map((p) => p._id);
+    const leads = await Lead.find({
+      agent: req.agent.id,
+      property: { $in: propIds },
+    }).lean();
+
+    const leadMap = {};
+    for (const l of leads) leadMap[l.property.toString()] = l;
+
+    const properties = (agent.assignedProperties || []).map((p) => ({
+      ...p,
+      lead: leadMap[p._id.toString()] || null,
+    }));
+
+    res.json({
+      properties,
+      total: properties.length,
+      assignedAt: agent.assignedAt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: browse all properties to pick for assignment ──────
+router.get("/browse-properties", auth, adminOnly, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, city, op, q } = req.query;
+    const filter = { status: "active", is_particular: true };
+    if (city) filter["address.city"] = new RegExp(city, "i");
+    if (op) filter.operation = op;
+    if (q) {
+      filter.$or = [
+        { "address.city": new RegExp(q, "i") },
+        { "address.street": new RegExp(q, "i") },
+        { "address.neighborhood": new RegExp(q, "i") },
+      ];
+    }
+    const total = await Property.countDocuments(filter);
+    const props = await Property.find(filter)
+      .select(
+        "title price operation propertyType address images idealista_id rooms size floor",
+      )
+      .skip((+page - 1) * +limit)
+      .limit(+limit)
+      .lean();
+    res.json({ properties: props, total, page: +page });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
