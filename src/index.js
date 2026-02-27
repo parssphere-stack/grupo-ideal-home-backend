@@ -31,6 +31,7 @@ const scraperRouter = require("./routes/scraper");
 app.use("/api/properties", require("./routes/properties"));
 app.use("/api/scraper", scraperRouter);
 app.use("/api/agents", require("./routes/agent.routes"));
+app.use("/api/properties", require("./routes/enrich"));
 
 // Health check
 app.get("/api/health", (req, res) => {
