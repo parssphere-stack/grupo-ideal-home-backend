@@ -7,7 +7,8 @@ const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
 function fullImgUrl(url) {
   if (!url) return null;
-  return url.replace("/blur/WEB_DETAIL_TOP-XL-P/0/", "/files/");
+  // Replace ANY blur size: /blur/WEB_DETAIL_TOP-XL-P/0/ or /180/ etc → /files/
+  return url.replace(/\/blur\/WEB_DETAIL_TOP-XL-P\/\d+\//, "/files/");
 }
 
 function getCol() {
@@ -74,7 +75,7 @@ router.post("/migrate-images", async (req, res) => {
 });
 
 async function runMigration(datasetId) {
-  console.log("🔄 Starting image migration — matching by idealista_id");
+  console.log("🔄 Image migration started — idealista_id match + full URL fix");
   const col = getCol();
   let offset = 0;
   const limit = 200;
@@ -92,7 +93,6 @@ async function runMigration(datasetId) {
 
     const bulkOps = [];
     for (const item of items) {
-      // Apify uses propertyCode — MongoDB stores it as idealista_id
       const code = item.propertyCode?.toString();
       if (!code) continue;
 
@@ -113,15 +113,37 @@ async function runMigration(datasetId) {
       const result = await col.bulkWrite(bulkOps, { ordered: false });
       totalUpdated += result.modifiedCount || 0;
       console.log(
-        `  ✅ Offset ${offset}: ${bulkOps.length} ops → ${result.modifiedCount || 0} updated`,
+        `  ✅ Offset ${offset}: ${result.modifiedCount || 0} updated`,
       );
     }
 
     offset += limit;
     if (items.length < limit) break;
-    await new Promise((r) => setTimeout(r, 150));
+    await new Promise((r) => setTimeout(r, 100));
   }
-  console.log(`🎉 Done: ${totalUpdated} properties updated`);
+
+  // Also fix existing blur URLs on already-migrated properties
+  console.log("🔧 Fixing blur URLs on existing properties...");
+  const blurDocs = await col
+    .find({
+      images: { $elemMatch: { $regex: "/blur/" } },
+    })
+    .toArray();
+
+  console.log(`  Found ${blurDocs.length} properties with blur URLs`);
+  const fixOps = blurDocs.map((doc) => ({
+    updateOne: {
+      filter: { _id: doc._id },
+      update: { $set: { images: doc.images.map(fullImgUrl).filter(Boolean) } },
+    },
+  }));
+
+  if (fixOps.length > 0) {
+    const r2 = await col.bulkWrite(fixOps, { ordered: false });
+    console.log(`  ✅ Fixed blur URLs on ${r2.modifiedCount} properties`);
+  }
+
+  console.log(`🎉 Done: ${totalUpdated} new + ${fixOps.length} URL-fixed`);
 }
 
 module.exports = router;
