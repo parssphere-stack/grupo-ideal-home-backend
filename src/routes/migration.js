@@ -7,7 +7,6 @@ const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
 function fullImgUrl(url) {
   if (!url) return null;
-  // Convert blur URL to full quality
   return url.replace("/blur/WEB_DETAIL_TOP-XL-P/0/", "/files/");
 }
 
@@ -29,7 +28,7 @@ router.get("/migrate-images/status", async (req, res) => {
   }
 });
 
-// Check sample — debug
+// Debug sample
 router.get("/migrate-images/check-sample", async (req, res) => {
   try {
     const col = getCol();
@@ -42,16 +41,14 @@ router.get("/migrate-images/check-sample", async (req, res) => {
     res.json({
       withManyImages: big
         ? {
-            code: big.propertyCode,
-            codeType: typeof big.propertyCode,
+            idealista_id: big.idealista_id,
             count: big.images?.length,
             sample: big.images?.slice(0, 2),
           }
         : null,
       withFewImages: small
         ? {
-            code: small.propertyCode,
-            codeType: typeof small.propertyCode,
+            idealista_id: small.idealista_id,
             count: small.images?.length,
             sample: small.images?.slice(0, 2),
           }
@@ -77,7 +74,7 @@ router.post("/migrate-images", async (req, res) => {
 });
 
 async function runMigration(datasetId) {
-  console.log("🔄 Starting image migration from Apify dataset:", datasetId);
+  console.log("🔄 Starting image migration — matching by idealista_id");
   const col = getCol();
   let offset = 0;
   const limit = 200;
@@ -95,7 +92,8 @@ async function runMigration(datasetId) {
 
     const bulkOps = [];
     for (const item of items) {
-      const code = item.propertyCode;
+      // Apify uses propertyCode — MongoDB stores it as idealista_id
+      const code = item.propertyCode?.toString();
       if (!code) continue;
 
       const images = (item.multimedia?.images || [])
@@ -103,15 +101,9 @@ async function runMigration(datasetId) {
         .filter(Boolean);
       if (images.length === 0) continue;
 
-      // Try both string and number match for propertyCode
       bulkOps.push({
         updateOne: {
-          filter: {
-            $or: [
-              { propertyCode: code.toString() },
-              { propertyCode: parseInt(code) },
-            ],
-          },
+          filter: { idealista_id: code },
           update: { $set: { images } },
         },
       });
@@ -129,9 +121,7 @@ async function runMigration(datasetId) {
     if (items.length < limit) break;
     await new Promise((r) => setTimeout(r, 150));
   }
-  console.log(
-    `🎉 Migration complete: ${totalUpdated} properties updated with full images`,
-  );
+  console.log(`🎉 Done: ${totalUpdated} properties updated`);
 }
 
 module.exports = router;
