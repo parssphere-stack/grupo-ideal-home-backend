@@ -1,5 +1,4 @@
 // backend/src/routes/migration.js
-// Uses mongoose directly — no require('../models/...') needed
 const express = require("express");
 const router = express.Router();
 const mongoose = require("mongoose");
@@ -8,17 +7,18 @@ const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
 function fullImgUrl(url) {
   if (!url) return null;
+  // Convert blur URL to full quality
   return url.replace("/blur/WEB_DETAIL_TOP-XL-P/0/", "/files/");
 }
 
-function getPropertyCollection() {
-  // Access MongoDB collection directly via mongoose connection
+function getCol() {
   return mongoose.connection.collection("properties");
 }
 
+// Status
 router.get("/migrate-images/status", async (req, res) => {
   try {
-    const col = getPropertyCollection();
+    const col = getCol();
     const total = await col.countDocuments();
     const withManyImages = await col.countDocuments({
       $expr: { $gte: [{ $size: { $ifNull: ["$images", []] } }, 10] },
@@ -29,6 +29,40 @@ router.get("/migrate-images/status", async (req, res) => {
   }
 });
 
+// Check sample — debug
+router.get("/migrate-images/check-sample", async (req, res) => {
+  try {
+    const col = getCol();
+    const big = await col.findOne({
+      $expr: { $gte: [{ $size: { $ifNull: ["$images", []] } }, 10] },
+    });
+    const small = await col.findOne({
+      $expr: { $lte: [{ $size: { $ifNull: ["$images", []] } }, 3] },
+    });
+    res.json({
+      withManyImages: big
+        ? {
+            code: big.propertyCode,
+            codeType: typeof big.propertyCode,
+            count: big.images?.length,
+            sample: big.images?.slice(0, 2),
+          }
+        : null,
+      withFewImages: small
+        ? {
+            code: small.propertyCode,
+            codeType: typeof small.propertyCode,
+            count: small.images?.length,
+            sample: small.images?.slice(0, 2),
+          }
+        : null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Trigger migration
 router.post("/migrate-images", async (req, res) => {
   if (!APIFY_TOKEN)
     return res.status(500).json({ error: "APIFY_API_TOKEN not set" });
@@ -44,7 +78,7 @@ router.post("/migrate-images", async (req, res) => {
 
 async function runMigration(datasetId) {
   console.log("🔄 Starting image migration from Apify dataset:", datasetId);
-  const col = getPropertyCollection();
+  const col = getCol();
   let offset = 0;
   const limit = 200;
   let totalUpdated = 0;
@@ -61,15 +95,23 @@ async function runMigration(datasetId) {
 
     const bulkOps = [];
     for (const item of items) {
-      const code = item.propertyCode?.toString();
+      const code = item.propertyCode;
       if (!code) continue;
+
       const images = (item.multimedia?.images || [])
         .map((img) => fullImgUrl(img.url))
         .filter(Boolean);
       if (images.length === 0) continue;
+
+      // Try both string and number match for propertyCode
       bulkOps.push({
         updateOne: {
-          filter: { propertyCode: code },
+          filter: {
+            $or: [
+              { propertyCode: code.toString() },
+              { propertyCode: parseInt(code) },
+            ],
+          },
           update: { $set: { images } },
         },
       });
@@ -77,7 +119,7 @@ async function runMigration(datasetId) {
 
     if (bulkOps.length > 0) {
       const result = await col.bulkWrite(bulkOps, { ordered: false });
-      totalUpdated += result.modifiedCount || result.nModified || 0;
+      totalUpdated += result.modifiedCount || 0;
       console.log(
         `  ✅ Offset ${offset}: ${bulkOps.length} ops → ${result.modifiedCount || 0} updated`,
       );
