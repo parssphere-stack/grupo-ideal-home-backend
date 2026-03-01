@@ -7,13 +7,27 @@ const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
 
 function fullImgUrl(url) {
   if (!url) return null;
-  // Replace ANY blur variant: /blur/WEB_DETAIL_TOP-XL-P/ANY_NUMBER/
   return url.replace(/\/blur\/WEB_DETAIL_TOP-XL-P\/\d+\//, "/files/");
 }
 
 function getCol() {
   return mongoose.connection.collection("properties");
 }
+
+// ══ NEW: Return full images for a property (no slice) ══
+router.get("/property-images/:id", async (req, res) => {
+  try {
+    const col = getCol();
+    const doc = await col.findOne(
+      { idealista_id: req.params.id },
+      { projection: { images: 1 } },
+    );
+    if (!doc) return res.status(404).json({ images: [] });
+    res.json({ images: doc.images || [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Status
 router.get("/migrate-images/status", async (req, res) => {
@@ -68,7 +82,7 @@ router.get("/migrate-images/check-sample", async (req, res) => {
   }
 });
 
-// Fix ALL blur URLs (run this separately)
+// Fix ALL blur URLs
 router.post("/fix-blur-urls", async (req, res) => {
   res.json({ status: "started", message: "Fixing blur URLs in background" });
   fixAllBlurUrls().catch((e) => console.error("Fix blur failed:", e));
@@ -77,11 +91,9 @@ router.post("/fix-blur-urls", async (req, res) => {
 async function fixAllBlurUrls() {
   const col = getCol();
   console.log("🔧 Fixing all blur URLs...");
-  // Process in batches of 500
   let fixed = 0;
   let skip = 0;
   const batchSize = 500;
-
   while (true) {
     const docs = await col
       .find(
@@ -91,9 +103,7 @@ async function fixAllBlurUrls() {
       .skip(skip)
       .limit(batchSize)
       .toArray();
-
     if (!docs.length) break;
-
     const bulkOps = docs.map((doc) => ({
       updateOne: {
         filter: { _id: doc._id },
@@ -102,16 +112,12 @@ async function fixAllBlurUrls() {
         },
       },
     }));
-
     const result = await col.bulkWrite(bulkOps, { ordered: false });
     fixed += result.modifiedCount || 0;
-    console.log(
-      `  Batch ${skip}-${skip + batchSize}: ${result.modifiedCount} fixed`,
-    );
     skip += batchSize;
     await new Promise((r) => setTimeout(r, 100));
   }
-  console.log(`🎉 Blur URL fix complete: ${fixed} properties updated`);
+  console.log(`🎉 Blur URL fix complete: ${fixed} updated`);
 }
 
 // Trigger full migration
@@ -120,7 +126,6 @@ router.post("/migrate-images", async (req, res) => {
     return res.status(500).json({ error: "APIFY_API_TOKEN not set" });
   const datasetId = req.body.datasetId || process.env.APIFY_DATASET_ID;
   if (!datasetId) return res.status(400).json({ error: "datasetId required" });
-
   res.json({
     status: "started",
     message: "Migration running. Check /api/admin/migrate-images/status",
@@ -134,7 +139,6 @@ async function runMigration(datasetId) {
   let offset = 0;
   const limit = 200;
   let totalUpdated = 0;
-
   while (true) {
     const url = `https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}&limit=${limit}&offset=${offset}`;
     const resp = await fetch(url);
@@ -144,7 +148,6 @@ async function runMigration(datasetId) {
     }
     const items = await resp.json();
     if (!items || items.length === 0) break;
-
     const bulkOps = [];
     for (const item of items) {
       const code = item.propertyCode?.toString();
@@ -160,21 +163,16 @@ async function runMigration(datasetId) {
         },
       });
     }
-
     if (bulkOps.length > 0) {
       const result = await col.bulkWrite(bulkOps, { ordered: false });
       totalUpdated += result.modifiedCount || 0;
-      console.log(`  Offset ${offset}: ${result.modifiedCount || 0} updated`);
     }
-
     offset += limit;
     if (items.length < limit) break;
     await new Promise((r) => setTimeout(r, 100));
   }
-
-  // Fix any remaining blur URLs
   await fixAllBlurUrls();
-  console.log(`🎉 Migration done: ${totalUpdated} updated`);
+  console.log(`🎉 Done: ${totalUpdated} updated`);
 }
 
 module.exports = router;
