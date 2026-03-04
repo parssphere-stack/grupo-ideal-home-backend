@@ -7,6 +7,8 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const https = require("https");
+const http = require("http");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -16,6 +18,53 @@ const MONGODB_URI =
 // ── Middleware ──────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
+
+// ── IMAGE PROXY — Idealista hotlink fix ─────────────────────
+app.get("/api/img", (req, res) => {
+  const url = req.query.u;
+  if (!url) return res.status(400).send("missing url");
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(decodeURIComponent(url));
+    if (!parsedUrl.hostname.includes("idealista.com")) {
+      return res.status(403).send("not allowed");
+    }
+  } catch (e) {
+    return res.status(400).send("invalid url");
+  }
+
+  const protocol = parsedUrl.protocol === "https:" ? https : http;
+
+  const options = {
+    hostname: parsedUrl.hostname,
+    path: parsedUrl.pathname + parsedUrl.search,
+    method: "GET",
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+    },
+  };
+
+  const proxyReq = protocol.request(options, (proxyRes) => {
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    res.setHeader(
+      "Content-Type",
+      proxyRes.headers["content-type"] || "image/webp",
+    );
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(proxyRes.statusCode);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on("error", () => res.status(500).send("proxy error"));
+  proxyReq.setTimeout(10000, () => {
+    proxyReq.destroy();
+    res.status(504).send("timeout");
+  });
+  proxyReq.end();
+});
 
 // ── MongoDB Connection ──────────────────────────────────────
 mongoose
@@ -49,7 +98,6 @@ app.listen(PORT, () => {
   console.log(`   http://localhost:${PORT}/api`);
   console.log(`   http://localhost:${PORT}/api/health\n`);
 
-  // Auto-resume scraper loop after DB is ready
   mongoose.connection.once("open", async () => {
     try {
       const Property = require("./models/property.model");
