@@ -20,23 +20,18 @@ app.use(cors());
 app.use(express.json());
 
 // ── IMAGE PROXY — Idealista hotlink fix ─────────────────────
-app.get("/api/img", (req, res) => {
-  const url = req.query.u;
-  if (!url) return res.status(400).send("missing url");
+function fetchImage(url, res, redirectCount = 0) {
+  if (redirectCount > 5) return res.status(502).send("too many redirects");
 
   let parsedUrl;
   try {
-    parsedUrl = new URL(decodeURIComponent(url));
-    if (!parsedUrl.hostname.includes("idealista.com")) {
-      return res.status(403).send("not allowed");
-    }
+    parsedUrl = new URL(url);
   } catch (e) {
     return res.status(400).send("invalid url");
   }
 
   const protocol = parsedUrl.protocol === "https:" ? https : http;
 
-  // Full browser headers — Idealista blocks simple bots
   const options = {
     hostname: parsedUrl.hostname,
     path: parsedUrl.pathname + parsedUrl.search,
@@ -44,32 +39,39 @@ app.get("/api/img", (req, res) => {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-      Accept:
-        "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-      "Accept-Encoding": "gzip, deflate, br",
+      Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+      "Accept-Encoding": "identity",
       "Accept-Language": "es-ES,es;q=0.9",
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
       "Sec-Fetch-Dest": "image",
       "Sec-Fetch-Mode": "no-cors",
       "Sec-Fetch-Site": "cross-site",
-      // NO Referer header — key to bypass hotlink
     },
   };
 
   const proxyReq = protocol.request(options, (proxyRes) => {
     const status = proxyRes.statusCode;
 
-    // If Idealista returned error (403, redirect, etc) — log and return 502
+    // Follow redirects (301, 302, 307, 308)
+    if ([301, 302, 307, 308].includes(status)) {
+      const location = proxyRes.headers["location"];
+      if (!location) return res.status(502).send("redirect without location");
+      const nextUrl = location.startsWith("http")
+        ? location
+        : `${parsedUrl.protocol}//${parsedUrl.hostname}${location}`;
+      console.log(`Redirect ${status} -> ${nextUrl}`);
+      // Drain response before next request
+      proxyRes.resume();
+      return fetchImage(nextUrl, res, redirectCount + 1);
+    }
+
     if (status !== 200) {
-      console.log(`Idealista returned ${status} for: ${url}`);
-      return res.status(502).send(`Idealista returned ${status}`);
+      console.log(`Error ${status} for: ${url}`);
+      return res.status(502).send(`upstream returned ${status}`);
     }
 
     const ct = proxyRes.headers["content-type"] || "";
-    // Make sure it's actually an image
     if (!ct.startsWith("image/")) {
-      console.log(`Non-image content-type: ${ct} for: ${url}`);
+      console.log(`Non-image content-type: ${ct}`);
       return res.status(502).send("not an image");
     }
 
@@ -81,15 +83,33 @@ app.get("/api/img", (req, res) => {
 
   proxyReq.on("error", (e) => {
     console.error("Proxy error:", e.message);
-    res.status(500).send("proxy error");
+    if (!res.headersSent) res.status(500).send("proxy error");
   });
 
   proxyReq.setTimeout(12000, () => {
     proxyReq.destroy();
-    res.status(504).send("timeout");
+    if (!res.headersSent) res.status(504).send("timeout");
   });
 
   proxyReq.end();
+}
+
+app.get("/api/img", (req, res) => {
+  const url = req.query.u;
+  if (!url) return res.status(400).send("missing url");
+
+  let decoded;
+  try {
+    decoded = decodeURIComponent(url);
+    const check = new URL(decoded);
+    if (!check.hostname.includes("idealista.com")) {
+      return res.status(403).send("not allowed");
+    }
+  } catch (e) {
+    return res.status(400).send("invalid url");
+  }
+
+  fetchImage(decoded, res);
 });
 
 // ── MongoDB Connection ──────────────────────────────────────
