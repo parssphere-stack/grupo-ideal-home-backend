@@ -36,33 +36,59 @@ app.get("/api/img", (req, res) => {
 
   const protocol = parsedUrl.protocol === "https:" ? https : http;
 
+  // Full browser headers — Idealista blocks simple bots
   const options = {
     hostname: parsedUrl.hostname,
     path: parsedUrl.pathname + parsedUrl.search,
     method: "GET",
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-      Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      Accept:
+        "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+      "Accept-Encoding": "gzip, deflate, br",
+      "Accept-Language": "es-ES,es;q=0.9",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache",
+      "Sec-Fetch-Dest": "image",
+      "Sec-Fetch-Mode": "no-cors",
+      "Sec-Fetch-Site": "cross-site",
+      // NO Referer header — key to bypass hotlink
     },
   };
 
   const proxyReq = protocol.request(options, (proxyRes) => {
+    const status = proxyRes.statusCode;
+
+    // If Idealista returned error (403, redirect, etc) — log and return 502
+    if (status !== 200) {
+      console.log(`Idealista returned ${status} for: ${url}`);
+      return res.status(502).send(`Idealista returned ${status}`);
+    }
+
+    const ct = proxyRes.headers["content-type"] || "";
+    // Make sure it's actually an image
+    if (!ct.startsWith("image/")) {
+      console.log(`Non-image content-type: ${ct} for: ${url}`);
+      return res.status(502).send("not an image");
+    }
+
     res.setHeader("Cache-Control", "public, max-age=604800");
-    res.setHeader(
-      "Content-Type",
-      proxyRes.headers["content-type"] || "image/webp",
-    );
+    res.setHeader("Content-Type", ct);
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.status(proxyRes.statusCode);
     proxyRes.pipe(res);
   });
 
-  proxyReq.on("error", () => res.status(500).send("proxy error"));
-  proxyReq.setTimeout(10000, () => {
+  proxyReq.on("error", (e) => {
+    console.error("Proxy error:", e.message);
+    res.status(500).send("proxy error");
+  });
+
+  proxyReq.setTimeout(12000, () => {
     proxyReq.destroy();
     res.status(504).send("timeout");
   });
+
   proxyReq.end();
 });
 
