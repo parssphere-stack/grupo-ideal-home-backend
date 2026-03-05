@@ -153,6 +153,8 @@ app.use("/api/properties", require("./routes/enrich"));
 app.use("/api/admin", require("./routes/migration"));
 app.use("/api/users", require("./routes/user.routes"));
 app.use("/api/inbox", require("./routes/inbox.routes"));
+app.use("/api/activity", require("./routes/activity.routes"));
+app.use("/api/alerts", require("./routes/alert.routes"));
 
 // Health check
 app.get("/api/health", (req, res) => {

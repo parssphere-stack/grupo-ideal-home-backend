@@ -6,6 +6,7 @@
  * Phase 2: URL validation for expired listings (~100min, free)
  * Phase 3: Incremental scrape — last 48h only (~15min, ~$0.40/day)
  * Phase 4: Phone enrichment for existing properties (~25min, free)
+ * Phase 5: Alert emails — send matching properties to subscribers (~2min)
  */
 
 const axios = require("axios");
@@ -431,6 +432,10 @@ async function runDailyMaintenance() {
 
     // Phase 4: Phone enrichment (~25min)
     results.phones = await enrichPhones();
+
+    // Phase 5: Alert emails (~2min)
+    const { processAlerts } = require("./alert-mailer");
+    results.alerts = await processAlerts();
   } catch (err) {
     console.error("[Maintenance] Fatal error:", err.message);
     results.error = err.message;
