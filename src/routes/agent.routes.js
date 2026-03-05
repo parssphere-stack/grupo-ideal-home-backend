@@ -363,13 +363,19 @@ router.get("/stats", auth, async (req, res) => {
       if (median && (ppm2 - median) / median <= -0.15) ocasiones++;
     }
 
-    const myLeads = await Lead.countDocuments({ agent: req.agent.id });
-    const myDeals = await Lead.countDocuments({
-      agent: req.agent.id,
-      status: "deal",
-    });
-    const totalLeads = await Lead.countDocuments();
-    const totalDeals = await Lead.countDocuments({ status: "deal" });
+    // Per-status lead counts (for current user)
+    const myContactado = await Lead.countDocuments({ agent: req.agent.id, status: "contactado" });
+    const myNegociacion = await Lead.countDocuments({ agent: req.agent.id, status: "negociacion" });
+    const myDeals = await Lead.countDocuments({ agent: req.agent.id, status: "deal" });
+    const myDescartado = await Lead.countDocuments({ agent: req.agent.id, status: "descartado" });
+    const myTotal = myContactado + myNegociacion + myDeals + myDescartado;
+
+    // Global lead counts (for admin)
+    const allContactado = await Lead.countDocuments({ status: "contactado" });
+    const allNegociacion = await Lead.countDocuments({ status: "negociacion" });
+    const allDeals = await Lead.countDocuments({ status: "deal" });
+    const allDescartado = await Lead.countDocuments({ status: "descartado" });
+
     const totalAgents = await Agent.countDocuments({
       role: "agent",
       active: true,
@@ -384,13 +390,16 @@ router.get("/stats", auth, async (req, res) => {
       0,
     );
 
+    const isAdmin = req.agent.role === "admin";
     res.json({
       total,
       ocasiones,
-      myLeads,
-      myDeals,
-      totalLeads,
-      totalDeals,
+      // Lead status counts (admin sees global, agent sees own)
+      contactado: isAdmin ? allContactado : myContactado,
+      negociacion: isAdmin ? allNegociacion : myNegociacion,
+      deals: isAdmin ? allDeals : myDeals,
+      descartado: isAdmin ? allDescartado : myDescartado,
+      myTotal,
       totalAgents,
       totalAssigned,
     });
