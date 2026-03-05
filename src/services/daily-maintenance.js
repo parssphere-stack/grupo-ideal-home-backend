@@ -280,10 +280,11 @@ async function validateActiveListings() {
       const operation = loc.startUrl.includes("alquiler") ? "rent" : "sale";
 
       // 5. Find our active particular properties for this city + operation
+      //    DB stores city in address.city (raw Apify) or location.city (mapItem)
       const ourProperties = await Property.find({
         status: "active",
         is_particular: true,
-        "location.city": loc.matchCity,
+        $or: [{ "address.city": loc.matchCity }, { "location.city": loc.matchCity }],
         operation,
       }).select("idealista_id").lean();
 
