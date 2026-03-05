@@ -151,6 +151,8 @@ app.use("/api/scraper", require("./routes/scraper"));
 app.use("/api/agents", require("./routes/agent.routes"));
 app.use("/api/properties", require("./routes/enrich"));
 app.use("/api/admin", require("./routes/migration"));
+app.use("/api/users", require("./routes/user.routes"));
+app.use("/api/inbox", require("./routes/inbox.routes"));
 
 // Health check
 app.get("/api/health", (req, res) => {
