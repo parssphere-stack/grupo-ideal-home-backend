@@ -26,6 +26,8 @@
 const express = require("express");
 const router = express.Router();
 const Property = require("../models/property.model");
+const Agent = require("../models/agent.model");
+const mongoose = require("mongoose");
 
 // ── GET /api/properties ─────────────────────────────────────
 router.get("/", async (req, res) => {
@@ -86,6 +88,13 @@ router.get("/", async (req, res) => {
     if (q.has_terrace === "1") filter["features.has_terrace"] = true;
     if (q.has_pool === "1") filter["features.has_pool"] = true;
     if (q.is_exterior === "1") filter["features.is_exterior"] = true;
+
+    // Exclude already-assigned properties
+    if (q.excludeAssigned === "1") {
+      const allAgents = await Agent.find({}, "assignedProperties").lean();
+      const assignedIds = allAgents.flatMap((a) => a.assignedProperties || []);
+      if (assignedIds.length) filter._id = { $nin: assignedIds };
+    }
 
     // Geo filter (radius)
     if (q.lat && q.lng && q.radius_km) {
@@ -322,5 +331,4 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-const mongoose = require("mongoose");
 module.exports = router;

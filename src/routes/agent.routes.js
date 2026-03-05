@@ -370,8 +370,30 @@ router.get("/stats", auth, async (req, res) => {
     });
     const totalLeads = await Lead.countDocuments();
     const totalDeals = await Lead.countDocuments({ status: "deal" });
+    const totalAgents = await Agent.countDocuments({
+      role: "agent",
+      active: true,
+    });
 
-    res.json({ total, ocasiones, myLeads, myDeals, totalLeads, totalDeals });
+    // Count total assigned across all agents
+    const agentsWithProps = await Agent.find({ role: "agent" })
+      .select("assignedProperties")
+      .lean();
+    const totalAssigned = agentsWithProps.reduce(
+      (s, a) => s + (a.assignedProperties?.length || 0),
+      0,
+    );
+
+    res.json({
+      total,
+      ocasiones,
+      myLeads,
+      myDeals,
+      totalLeads,
+      totalDeals,
+      totalAgents,
+      totalAssigned,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -386,27 +408,69 @@ router.post("/assign", auth, adminOnly, async (req, res) => {
       return res
         .status(400)
         .json({ error: "agentId and propertyIds required" });
-    if (propertyIds.length > 50)
+
+    const agent = await Agent.findById(agentId);
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    // Append new properties (deduplicate)
+    const existing = (agent.assignedProperties || []).map(String);
+    const merged = [...new Set([...existing, ...propertyIds.map(String)])];
+    if (merged.length > 50)
       return res.status(400).json({ error: "Max 50 properties per agent" });
 
-    const agent = await Agent.findByIdAndUpdate(
-      agentId,
-      {
-        assignedProperties: propertyIds,
-        assignedAt: new Date(),
-        assignedBy: req.agent.id,
-      },
-      { new: true },
-    ).select("-password");
+    agent.assignedProperties = merged;
+    agent.assignedAt = new Date();
+    agent.assignedBy = req.agent.id;
+    await agent.save();
 
-    if (!agent) return res.status(404).json({ error: "Agent not found" });
-    res.json({ success: true, agent, count: propertyIds.length });
+    // Auto-create leads for newly assigned properties
+    const newIds = propertyIds.filter((id) => !existing.includes(String(id)));
+    let leadsCreated = 0;
+    for (const propId of newIds) {
+      const exists = await Lead.findOne({ property: propId });
+      if (!exists) {
+        await Lead.create({
+          property: propId,
+          agent: agentId,
+          status: "contactado",
+        });
+        leadsCreated++;
+      }
+    }
+
+    res.json({
+      success: true,
+      agent: await Agent.findById(agentId).select("-password").lean(),
+      count: merged.length,
+      leadsCreated,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Admin: get all agents with their assigned properties ─────
+// ── Admin: unassign a property from agent ───────────────────
+// POST /api/agents/unassign  { agentId, propertyId }
+router.post("/unassign", auth, adminOnly, async (req, res) => {
+  try {
+    const { agentId, propertyId } = req.body;
+    if (!agentId || !propertyId)
+      return res.status(400).json({ error: "agentId and propertyId required" });
+
+    await Agent.findByIdAndUpdate(agentId, {
+      $pull: { assignedProperties: propertyId },
+    });
+
+    // Also remove the lead
+    await Lead.deleteOne({ property: propertyId, agent: agentId });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin: get all agents with their assigned properties + lead summary ─
 router.get("/agents-full", auth, adminOnly, async (req, res) => {
   try {
     const agents = await Agent.find({ role: "agent" })
@@ -416,21 +480,90 @@ router.get("/agents-full", auth, adminOnly, async (req, res) => {
         "title price operation propertyType address images idealista_id",
       )
       .lean();
-    res.json(agents);
+
+    // Get all leads and build per-agent summary
+    const allLeads = await Lead.find().lean();
+    const agentLeadMap = {};
+    for (const l of allLeads) {
+      const aid = String(l.agent);
+      if (!agentLeadMap[aid]) agentLeadMap[aid] = [];
+      agentLeadMap[aid].push(l);
+    }
+
+    const enriched = agents.map((a) => {
+      const leads = agentLeadMap[String(a._id)] || [];
+      return {
+        ...a,
+        leadSummary: {
+          total: leads.length,
+          contactado: leads.filter((l) => l.status === "contactado").length,
+          negociacion: leads.filter((l) => l.status === "negociacion").length,
+          deal: leads.filter((l) => l.status === "deal").length,
+          descartado: leads.filter((l) => l.status === "descartado").length,
+        },
+        lastActivity: leads.length
+          ? leads.reduce((max, l) => {
+              const d = l.updatedAt || l.contactedAt;
+              return d > max ? d : max;
+            }, leads[0].contactedAt)
+          : null,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ── Agent: get my assigned properties (with contact info) ────
+// ── Admin: get single agent overview with properties + lead statuses ─
+router.get("/:id/overview", auth, adminOnly, async (req, res) => {
+  try {
+    const agent = await Agent.findById(req.params.id)
+      .select("-password")
+      .populate({
+        path: "assignedProperties",
+        select:
+          "title price operation propertyType address images idealista_id rooms size floor hasLift exterior hasTerrace hasPool contact url scraped_at",
+      })
+      .lean();
+
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    // Get leads for this agent
+    const leads = await Lead.find({ agent: agent._id }).lean();
+    const leadMap = {};
+    for (const l of leads) leadMap[String(l.property)] = l;
+
+    const properties = (agent.assignedProperties || []).map((p) => ({
+      ...p,
+      lead: leadMap[String(p._id)] || null,
+    }));
+
+    const summary = {
+      total: properties.length,
+      contactado: leads.filter((l) => l.status === "contactado").length,
+      negociacion: leads.filter((l) => l.status === "negociacion").length,
+      deal: leads.filter((l) => l.status === "deal").length,
+      descartado: leads.filter((l) => l.status === "descartado").length,
+    };
+
+    res.json({ agent, properties, summary });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Agent: get my assigned properties (with contact info, NO idealista url) ──
 router.get("/my-properties", auth, async (req, res) => {
   try {
     const agent = await Agent.findById(req.agent.id)
       .populate({
         path: "assignedProperties",
         match: { status: "active" },
+        // Exclude url and idealista_id — agents should not see source
         select:
-          "title price operation propertyType address images idealista_id rooms size floor hasLift exterior hasTerrace hasPool contactInfo url scraped_at",
+          "title price operation propertyType address images rooms size floor hasLift exterior hasTerrace hasPool contact scraped_at",
       })
       .lean();
 
