@@ -20,8 +20,31 @@ app.use(cors());
 app.use(express.json());
 
 // ── IMAGE PROXY — Idealista hotlink fix ─────────────────────
+// Idealista broke img4 direct URLs (301→404). Only /blur/ paths still work.
+function fixIdealistaUrl(url) {
+  if (!url.includes("idealista.com")) return url;
+  const u = new URL(url);
+  const path = u.pathname;
+  // Already has /blur/ — leave it
+  if (path.startsWith("/blur/")) return url;
+  // /WEB_DETAIL_TOP-XL-P/... → /blur/WEB_DETAIL_TOP-XL-P/...
+  if (path.includes("/WEB_DETAIL")) {
+    u.pathname = "/blur" + path;
+    return u.toString();
+  }
+  // /files/id.pro.es.image.master/... → /blur/WEB_DETAIL_TOP-XL-P/0/id.pro.es.image.master/...
+  if (path.startsWith("/files/")) {
+    u.pathname = "/blur/WEB_DETAIL_TOP-XL-P/0/" + path.slice("/files/".length);
+    return u.toString();
+  }
+  return url;
+}
+
 function fetchImage(url, res, redirectCount = 0) {
   if (redirectCount > 5) return res.status(502).send("too many redirects");
+
+  // Fix broken Idealista image URLs
+  url = fixIdealistaUrl(url);
 
   let parsedUrl;
   try {
@@ -64,7 +87,8 @@ function fetchImage(url, res, redirectCount = 0) {
       return fetchImage(nextUrl, res, redirectCount + 1);
     }
 
-    if (status !== 200) {
+    // 405 from Idealista still returns valid image data
+    if (status !== 200 && status !== 405) {
       console.log(`Error ${status} for: ${url}`);
       return res.status(502).send(`upstream returned ${status}`);
     }
