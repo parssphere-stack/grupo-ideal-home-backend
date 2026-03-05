@@ -25,6 +25,7 @@ const {
 } = require("../services/apify-client");
 const {
   runDailyMaintenance,
+  deactivateStaleProperties,
   maintenanceState,
 } = require("../services/daily-maintenance");
 
@@ -257,7 +258,17 @@ router.post("/maintenance/run", async (req, res) => {
   runDailyMaintenance().catch((err) =>
     console.error("Manual maintenance failed:", err.message),
   );
-  res.json({ message: "Daily maintenance started (agency detection + URL validation + incremental scrape + phone enrichment)" });
+  res.json({ message: "Daily maintenance started (agency detection + stale cleanup + URL validation + incremental scrape + phone enrichment + alerts)" });
+});
+
+// Trigger just stale property cleanup (instant)
+router.post("/maintenance/cleanup-stale", async (req, res) => {
+  try {
+    const result = await deactivateStaleProperties();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

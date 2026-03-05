@@ -3,6 +3,7 @@
  *
  * Runs at 3 AM CET automatically:
  * Phase 1: Agency re-detection (instant, free)
+ * Phase 1b: Stale property cleanup — 14+ days with no update/validation → inactive
  * Phase 2: URL validation for expired listings (~100min, free)
  * Phase 3: Incremental scrape — last 48h only (~15min, ~$0.40/day)
  * Phase 4: Phone enrichment for existing properties (~25min, free)
@@ -130,6 +131,35 @@ async function detectMisclassifiedAgencies() {
   }
   console.log(`[Maintenance] Phase 1 done: ${deactivated} agencies removed from ${active.length} checked`);
   return { checked: active.length, deactivated };
+}
+
+// ══════════════════════════════════════════════════════════════
+// Phase 1b: Stale Property Cleanup
+// Properties not re-scraped in 14+ days AND not validated in 14+ days → inactive
+// ══════════════════════════════════════════════════════════════
+async function deactivateStaleProperties() {
+  console.log("[Maintenance] Phase 1b: Stale property cleanup...");
+
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000); // 14 days ago
+
+  // Properties not updated (re-scraped) in 14+ days AND not validated in 14+ days
+  // updatedAt is the most reliable indicator — gets refreshed on any upsert
+  const result = await Property.updateMany(
+    {
+      status: "active",
+      updatedAt: { $lt: cutoff },
+      $or: [
+        { validated_at: { $exists: false } },
+        { validated_at: null },
+        { validated_at: { $lt: cutoff } },
+      ],
+    },
+    { $set: { status: "inactive" } },
+  );
+
+  const deactivated = result.modifiedCount || 0;
+  console.log(`[Maintenance] Phase 1b done: ${deactivated} stale properties deactivated`);
+  return { deactivated };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -424,6 +454,9 @@ async function runDailyMaintenance() {
     // Phase 1: Agency detection (~30s)
     results.agencies = await detectMisclassifiedAgencies();
 
+    // Phase 1b: Stale property cleanup (instant)
+    results.stale = await deactivateStaleProperties();
+
     // Phase 2: URL validation (~100min)
     results.validation = await validateActiveListings();
 
@@ -493,5 +526,6 @@ function startDailyMaintenance() {
 module.exports = {
   startDailyMaintenance,
   runDailyMaintenance,
+  deactivateStaleProperties,
   maintenanceState,
 };
