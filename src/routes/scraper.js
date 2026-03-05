@@ -10,6 +10,8 @@
  * POST /api/scraper/stop                  — stop auto-loop
  * GET  /api/scraper/maintenance/status    — daily maintenance status
  * POST /api/scraper/maintenance/run       — trigger maintenance manually
+ * POST /api/scraper/maintenance/validate  — trigger Phase 2 validation only
+ * POST /api/scraper/maintenance/cleanup-stale — trigger stale cleanup only
  */
 
 const express = require("express");
@@ -25,6 +27,7 @@ const {
 } = require("../services/apify-client");
 const {
   runDailyMaintenance,
+  validateActiveListings,
   deactivateStaleProperties,
   maintenanceState,
 } = require("../services/daily-maintenance");
@@ -259,6 +262,16 @@ router.post("/maintenance/run", async (req, res) => {
     console.error("Manual maintenance failed:", err.message),
   );
   res.json({ message: "Daily maintenance started (agency detection + stale cleanup + URL validation + incremental scrape + phone enrichment + alerts)" });
+});
+
+// Trigger just Phase 2 validation (Apify cross-reference)
+router.post("/maintenance/validate", async (req, res) => {
+  try {
+    const result = await validateActiveListings();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Trigger just stale property cleanup (instant)

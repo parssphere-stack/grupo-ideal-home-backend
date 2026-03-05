@@ -4,7 +4,7 @@
  * Runs at 3 AM CET automatically:
  * Phase 1: Agency re-detection (instant, free)
  * Phase 1b: Stale property cleanup — 14+ days with no update/validation → inactive
- * Phase 2: URL validation for expired listings (~100min, free)
+ * Phase 2: Apify cross-reference — full city scrape, deactivate missing (~20min, ~$0.50/day)
  * Phase 3: Incremental scrape — last 48h only (~15min, ~$0.40/day)
  * Phase 4: Phone enrichment for existing properties (~25min, free)
  * Phase 5: Alert emails — send matching properties to subscribers (~2min)
@@ -162,8 +162,45 @@ async function deactivateStaleProperties() {
   return { deactivated };
 }
 
+// ── Validation schedule — full scrapes rotating by day of week ──
+// Each day validates a different city group via Apify cross-reference.
+// Properties in our DB that don't appear in the full scrape → inactive.
+const VALIDATION_LOCATIONS = [
+  // 0 = Sunday: Madrid rent
+  [{ name: "Madrid rent", startUrl: "https://www.idealista.com/alquiler-viviendas/madrid-madrid/", maxItems: 2000, matchCity: "Madrid" }],
+  // 1 = Monday: Madrid sale
+  [{ name: "Madrid sale", startUrl: "https://www.idealista.com/venta-viviendas/madrid-madrid/", maxItems: 2000, matchCity: "Madrid" }],
+  // 2 = Tuesday: Málaga rent + sale
+  [
+    { name: "Málaga rent", startUrl: "https://www.idealista.com/alquiler-viviendas/malaga-malaga/", maxItems: 1500, matchCity: "Málaga" },
+    { name: "Málaga sale", startUrl: "https://www.idealista.com/venta-viviendas/malaga-malaga/", maxItems: 1500, matchCity: "Málaga" },
+  ],
+  // 3 = Wednesday: Marbella sale + rent
+  [
+    { name: "Marbella sale", startUrl: "https://www.idealista.com/venta-viviendas/marbella-malaga/", maxItems: 1500, matchCity: "Marbella" },
+    { name: "Marbella rent", startUrl: "https://www.idealista.com/alquiler-viviendas/marbella-malaga/", maxItems: 1000, matchCity: "Marbella" },
+  ],
+  // 4 = Thursday: Estepona + Fuengirola
+  [
+    { name: "Estepona sale", startUrl: "https://www.idealista.com/venta-viviendas/estepona-malaga/", maxItems: 1000, matchCity: "Estepona" },
+    { name: "Fuengirola sale", startUrl: "https://www.idealista.com/venta-viviendas/fuengirola-malaga/", maxItems: 1000, matchCity: "Fuengirola" },
+  ],
+  // 5 = Friday: Benalmádena + Torremolinos
+  [
+    { name: "Benalmádena rent", startUrl: "https://www.idealista.com/alquiler-viviendas/benalmadena-malaga/", maxItems: 800, matchCity: "Benalmádena" },
+    { name: "Torremolinos rent", startUrl: "https://www.idealista.com/alquiler-viviendas/torremolinos-malaga/", maxItems: 800, matchCity: "Torremolinos" },
+  ],
+  // 6 = Saturday: Nerja + Almuñécar
+  [
+    { name: "Nerja sale", startUrl: "https://www.idealista.com/venta-viviendas/nerja-malaga/", maxItems: 500, matchCity: "Nerja" },
+    { name: "Almuñécar sale", startUrl: "https://www.idealista.com/venta-viviendas/almunecar-granada/", maxItems: 500, matchCity: "Almuñécar" },
+  ],
+];
+
 // ══════════════════════════════════════════════════════════════
-// Phase 2: URL Validation (expired listing detection)
+// Phase 2: Apify Cross-Reference Validation
+// Scrapes full city listings via Apify, cross-references with DB.
+// Properties in our DB not found in the scrape → deactivated.
 // ══════════════════════════════════════════════════════════════
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -172,100 +209,147 @@ const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
 ];
 
-async function checkPropertyUrl(url) {
-  if (!url || !url.includes("idealista.com")) return "expired";
-
-  const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-  try {
-    const response = await axios.get(url, {
-      timeout: 10000,
-      maxRedirects: 5,
-      validateStatus: () => true,
-      headers: {
-        "User-Agent": ua,
-        "Accept-Language": "es-ES,es;q=0.9",
-        Accept: "text/html,application/xhtml+xml",
-        Referer: "https://www.idealista.com/",
-      },
-    });
-
-    const status = response.status;
-    if (status === 200) {
-      const html = typeof response.data === "string" ? response.data : "";
-      // If page has property content → active
-      if (html.includes("property-description") || html.includes("adDetailData")) return "active";
-      // If redirected to "no results" or home
-      if (html.includes("no-results") || html.includes("anuncio ya no")) return "expired";
-      return "active"; // 200 but ambiguous → assume active
-    }
-    if (status === 404 || status === 410) return "expired";
-    if (status === 301 || status === 302) {
-      const loc = response.headers.location || "";
-      if (loc.includes("/inmueble/")) return "active";
-      return "expired";
-    }
-    if (status === 403 || status === 429) return "blocked";
-    return "error";
-  } catch (e) {
-    if (e.code === "ECONNABORTED" || e.code === "ETIMEDOUT") return "blocked";
-    return "error";
+async function fetchDatasetIds(datasetId) {
+  const url = `https://api.apify.com/v2/datasets/${datasetId}/items?format=json&limit=10000`;
+  const headers = APIFY_TOKEN ? { Authorization: `Bearer ${APIFY_TOKEN}` } : {};
+  const res = await axios.get(url, { headers, timeout: 60000 });
+  const items = res.data;
+  const ids = new Set();
+  for (const item of items) {
+    const id = String(item.propertyCode || item.adId || item.id || "");
+    if (id) ids.add(id);
   }
+  return { ids, totalScraped: items.length };
 }
 
 async function validateActiveListings() {
-  console.log("[Maintenance] Phase 2: URL validation...");
+  console.log("[Maintenance] Phase 2: Apify cross-reference validation...");
 
-  // Get properties to validate — prioritize never-validated, then oldest validated
-  const properties = await Property.find({ status: "active" })
-    .select("_id idealista_id url validated_at")
-    .sort({ validated_at: 1 }) // null (never checked) first, then oldest
-    .lean();
-
-  let expired = 0, active = 0, blocked = 0, errors = 0;
-  let consecutiveBlocked = 0;
-  const DELAY = 2000; // 2s between requests
-  const MAX_CONSECUTIVE_BLOCKED = 20; // Pause if too many blocks
-
-  for (const prop of properties) {
-    if (!prop.url) {
-      // No URL = can't validate, skip
-      continue;
-    }
-
-    const result = await checkPropertyUrl(prop.url);
-
-    if (result === "expired") {
-      await Property.updateOne(
-        { _id: prop._id },
-        { $set: { status: "inactive", validated_at: new Date() } },
-      );
-      expired++;
-      consecutiveBlocked = 0;
-    } else if (result === "active") {
-      await Property.updateOne(
-        { _id: prop._id },
-        { $set: { validated_at: new Date() } },
-      );
-      active++;
-      consecutiveBlocked = 0;
-    } else if (result === "blocked") {
-      blocked++;
-      consecutiveBlocked++;
-      // If too many consecutive blocks, DataDome is throttling us — stop for today
-      if (consecutiveBlocked >= MAX_CONSECUTIVE_BLOCKED) {
-        console.log(`[Maintenance] Phase 2: ${MAX_CONSECUTIVE_BLOCKED} consecutive blocks — pausing until tomorrow`);
-        break;
-      }
-    } else {
-      errors++;
-      consecutiveBlocked = 0;
-    }
-
-    await sleep(DELAY);
+  if (!APIFY_TOKEN) {
+    console.log("[Maintenance] Phase 2: APIFY_TOKEN not set, skipping");
+    return { skipped: true, reason: "no token" };
   }
 
-  console.log(`[Maintenance] Phase 2 done: ${active} active, ${expired} expired, ${blocked} blocked, ${errors} errors`);
-  return { total: properties.length, active, expired, blocked, errors };
+  const credits = await checkApifyCredits();
+  if (credits.locked) {
+    console.log("[Maintenance] Phase 2: Apify account locked, skipping");
+    return { skipped: true, reason: "account locked" };
+  }
+
+  const dayOfWeek = new Date().getDay(); // 0=Sun … 6=Sat
+  const todaysLocations = VALIDATION_LOCATIONS[dayOfWeek] || [];
+
+  if (todaysLocations.length === 0) {
+    console.log("[Maintenance] Phase 2: No validation scheduled today");
+    return { skipped: true, reason: "no locations today" };
+  }
+
+  let totalDeactivated = 0;
+  const results = [];
+
+  for (const loc of todaysLocations) {
+    try {
+      console.log(`  Validation scrape: ${loc.name}...`);
+
+      // 1. Run full Apify scrape (no 48h filter)
+      const actorRun = await triggerActorRun(loc);
+      const finishedRun = await waitForRun(actorRun.id, 15);
+
+      // 2. Import dataset normally (upserts + agency filtering)
+      const importResult = await importDataset(finishedRun.defaultDatasetId, loc);
+
+      // 3. Fetch all scraped IDs for cross-reference
+      const { ids: scrapedIds, totalScraped } = await fetchDatasetIds(finishedRun.defaultDatasetId);
+      console.log(`  ${loc.name}: ${scrapedIds.size} unique IDs from ${totalScraped} items`);
+
+      // Safety: if scrape hit maxItems, data may be truncated — skip deactivation
+      if (totalScraped >= loc.maxItems * 0.95) {
+        console.log(`  ${loc.name}: scrape may be truncated (${totalScraped}/${loc.maxItems}), skipping deactivation`);
+        results.push({ location: loc.name, scraped: totalScraped, deactivated: 0, truncated: true });
+        continue;
+      }
+
+      // Safety: if scrape returned very few results, something may be wrong
+      if (totalScraped < 10) {
+        console.log(`  ${loc.name}: too few results (${totalScraped}), skipping deactivation`);
+        results.push({ location: loc.name, scraped: totalScraped, deactivated: 0, tooFew: true });
+        continue;
+      }
+
+      // 4. Determine operation from URL
+      const operation = loc.startUrl.includes("alquiler") ? "rent" : "sale";
+
+      // 5. Find our active particular properties for this city + operation
+      const ourProperties = await Property.find({
+        status: "active",
+        is_particular: true,
+        "location.city": loc.matchCity,
+        operation,
+      }).select("idealista_id").lean();
+
+      if (ourProperties.length === 0) {
+        console.log(`  ${loc.name}: no matching properties in DB`);
+        results.push({ location: loc.name, scraped: totalScraped, inDb: 0, deactivated: 0 });
+        continue;
+      }
+
+      // 6. Cross-reference: DB properties not in scrape → deactivate
+      const missing = ourProperties.filter((p) => !scrapedIds.has(p.idealista_id));
+
+      if (missing.length === 0) {
+        console.log(`  ${loc.name}: all ${ourProperties.length} listings confirmed active`);
+        // Mark all as validated
+        await Property.updateMany(
+          { idealista_id: { $in: ourProperties.map((p) => p.idealista_id) } },
+          { $set: { validated_at: new Date() } },
+        );
+        results.push({ location: loc.name, scraped: totalScraped, inDb: ourProperties.length, deactivated: 0 });
+        continue;
+      }
+
+      // Safety cap: don't deactivate more than 30% of a city's listings at once
+      const maxDeactivate = Math.ceil(ourProperties.length * 0.3);
+      const toDeactivate = missing.length > maxDeactivate ? missing.slice(0, maxDeactivate) : missing;
+
+      if (missing.length > maxDeactivate) {
+        console.log(`  ${loc.name}: ${missing.length} missing but capping at ${maxDeactivate} (30% safety limit)`);
+      }
+
+      const deactivateIds = toDeactivate.map((p) => p.idealista_id);
+      const updateResult = await Property.updateMany(
+        { idealista_id: { $in: deactivateIds }, status: "active" },
+        { $set: { status: "inactive", validated_at: new Date() } },
+      );
+      const deactivated = updateResult.modifiedCount || 0;
+      totalDeactivated += deactivated;
+
+      // Mark remaining (confirmed active) as validated
+      const confirmedIds = ourProperties
+        .filter((p) => scrapedIds.has(p.idealista_id))
+        .map((p) => p.idealista_id);
+      if (confirmedIds.length > 0) {
+        await Property.updateMany(
+          { idealista_id: { $in: confirmedIds } },
+          { $set: { validated_at: new Date() } },
+        );
+      }
+
+      console.log(`  ${loc.name}: ${deactivated} deactivated | ${confirmedIds.length} confirmed active (${ourProperties.length} in DB, ${scrapedIds.size} on Idealista)`);
+      results.push({ location: loc.name, scraped: totalScraped, inDb: ourProperties.length, onIdealista: scrapedIds.size, deactivated });
+    } catch (err) {
+      console.error(`  ${loc.name} validation failed: ${err.message}`);
+      results.push({ location: loc.name, error: err.message });
+      // Stop on quota/payment issues
+      if (err.message.includes("402") || err.message.includes("quota") || err.message.includes("payment")) {
+        console.log("[Maintenance] Phase 2: Apify quota issue — stopping");
+        break;
+      }
+    }
+    await sleep(5000);
+  }
+
+  console.log(`[Maintenance] Phase 2 done: ${totalDeactivated} listings deactivated across ${results.length} locations`);
+  return { totalDeactivated, results };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -526,6 +610,7 @@ function startDailyMaintenance() {
 module.exports = {
   startDailyMaintenance,
   runDailyMaintenance,
+  validateActiveListings,
   deactivateStaleProperties,
   maintenanceState,
 };
