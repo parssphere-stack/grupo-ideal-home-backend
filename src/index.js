@@ -146,9 +146,8 @@ mongoose
   });
 
 // ── Routes ──────────────────────────────────────────────────
-const scraperRouter = require("./routes/scraper");
 app.use("/api/properties", require("./routes/properties"));
-app.use("/api/scraper", scraperRouter);
+app.use("/api/scraper", require("./routes/scraper"));
 app.use("/api/agents", require("./routes/agent.routes"));
 app.use("/api/properties", require("./routes/enrich"));
 app.use("/api/admin", require("./routes/migration"));
@@ -176,21 +175,12 @@ app.listen(PORT, () => {
         is_particular: true,
       });
       console.log(`📊 DB has ${total} particulares`);
-      if (total < 10000) {
-        console.log(`🔄 Auto-resuming scraper loop (${total}/10000)...`);
-        if (scraperRouter.startAutoLoop) {
-          scraperRouter.startAutoLoop();
-        } else {
-          const axios = require("axios");
-          axios
-            .post(`http://localhost:${PORT}/api/scraper/bigrun`)
-            .catch(() => {});
-        }
-      } else {
-        console.log(`✅ Target reached (${total}/10000) - scraper idle`);
-      }
+
+      // Start daily maintenance (runs at 3 AM CET: agency check + URL validation + incremental scrape + phone enrichment)
+      const { startDailyMaintenance } = require("./services/daily-maintenance");
+      startDailyMaintenance();
     } catch (err) {
-      console.error("Auto-resume check failed:", err.message);
+      console.error("Startup check failed:", err.message);
     }
   });
 });

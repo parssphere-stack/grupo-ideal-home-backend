@@ -56,6 +56,8 @@ const propertySchema = new mongoose.Schema(
     status: { type: String, default: "active" },
     source: { type: String, default: "idealista" },
     scraped_at: Date,
+    validated_at: Date,
+    phone_checked_at: Date,
   },
   { timestamps: true },
 );
@@ -72,6 +74,7 @@ propertySchema.index({ "features.bedrooms": 1 });
 propertySchema.index({ "features.size_sqm": 1 });
 propertySchema.index({ type: 1 });
 propertySchema.index({ createdAt: -1 });
+propertySchema.index({ status: 1, validated_at: 1 });
 
 // Full-text search index
 propertySchema.index(
