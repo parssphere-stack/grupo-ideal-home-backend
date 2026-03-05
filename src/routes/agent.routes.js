@@ -524,7 +524,7 @@ router.get("/:id/overview", auth, adminOnly, async (req, res) => {
       .populate({
         path: "assignedProperties",
         select:
-          "title price operation propertyType address images idealista_id rooms size floor hasLift exterior hasTerrace hasPool contact url scraped_at",
+          "title price type operation location features images idealista_id contact url scraped_at",
       })
       .lean();
 
