@@ -10,22 +10,10 @@
 
 const express = require("express");
 const router = express.Router();
-const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const Alert = require("../models/alert.model");
 const User = require("../models/user.model");
-
-const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
-
-function auth(req, res, next) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "No token" });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
-  }
-}
+const { userAuth: auth, JWT_SECRET } = require("../middleware/auth");
 
 // List alerts
 router.get("/", auth, async (req, res) => {
@@ -96,7 +84,8 @@ router.get("/:id/unsubscribe", async (req, res) => {
   try {
     const alert = await Alert.findById(req.params.id);
     if (!alert) return res.send("<h2>Alert not found</h2>");
-    if (String(alert.user) !== req.query.token)
+    const expected = crypto.createHmac("sha256", JWT_SECRET).update(`${alert._id}:${alert.user}`).digest("hex").slice(0, 16);
+    if (req.query.token !== expected)
       return res.send("<h2>Invalid link</h2>");
     alert.active = false;
     await alert.save();

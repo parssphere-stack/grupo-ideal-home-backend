@@ -7,21 +7,8 @@
 
 const express = require("express");
 const router = express.Router();
-const jwt = require("jsonwebtoken");
 const Activity = require("../models/activity.model");
-
-const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
-
-function auth(req, res, next) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "No token" });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
-  }
-}
+const { userAuth: auth } = require("../middleware/auth");
 
 // Track property view (dedupe 30min)
 router.post("/view", auth, async (req, res) => {

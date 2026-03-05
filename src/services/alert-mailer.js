@@ -5,9 +5,11 @@
  * Processes alert subscriptions and sends matching property emails.
  */
 
+const crypto = require("crypto");
 const Alert = require("../models/alert.model");
 const Property = require("../models/property.model");
 const { sendEmail, buildAlertEmailHtml } = require("./email.service");
+const { JWT_SECRET } = require("../middleware/auth");
 
 async function processAlerts() {
   console.log("[Maintenance] Phase 5: Alert emails...");
@@ -55,7 +57,8 @@ async function processAlerts() {
 
       if (!matches.length) continue;
 
-      const unsubscribeUrl = `https://grupo-ideal-home-backend-production.up.railway.app/api/alerts/${alert._id}/unsubscribe?token=${alert.user._id}`;
+      const unsubToken = crypto.createHmac("sha256", JWT_SECRET).update(`${alert._id}:${alert.user._id}`).digest("hex").slice(0, 16);
+      const unsubscribeUrl = `https://grupo-ideal-home-backend-production.up.railway.app/api/alerts/${alert._id}/unsubscribe?token=${unsubToken}`;
       const html = buildAlertEmailHtml(
         alert.user.name,
         matches,

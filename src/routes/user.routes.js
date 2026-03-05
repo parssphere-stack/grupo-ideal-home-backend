@@ -12,27 +12,13 @@
 
 const express = require("express");
 const router = express.Router();
-const jwt = require("jsonwebtoken");
 const User = require("../models/user.model");
-
-const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
-
-// ── Auth middleware ──────────────────────────────────────────
-function auth(req, res, next) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "No token" });
-  try {
-    req.user = jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
-  }
-}
+const { userAuth: auth, signUserToken } = require("../middleware/auth");
 
 // ── Register ─────────────────────────────────────────────────
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, phone, anonymous_token, favorites } =
+    const { name, email, password, phone, favorites } =
       req.body;
     if (!name || !email || !password) {
       return res.status(400).json({ error: "Name, email, and password required" });
@@ -48,7 +34,6 @@ router.post("/register", async (req, res) => {
       email,
       password,
       phone,
-      anonymous_token,
     });
 
     // Merge localStorage favorites if provided
@@ -58,11 +43,7 @@ router.post("/register", async (req, res) => {
 
     await user.save();
 
-    const token = jwt.sign(
-      { id: user._id, name: user.name, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "30d" },
-    );
+    const token = signUserToken(user);
 
     res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email } });
   } catch (err) {
@@ -85,11 +66,7 @@ router.post("/login", async (req, res) => {
     const valid = await user.comparePassword(password);
     if (!valid) return res.status(401).json({ error: "Invalid credentials" });
 
-    const token = jwt.sign(
-      { id: user._id, name: user.name, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "30d" },
-    );
+    const token = signUserToken(user);
 
     res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
   } catch (err) {

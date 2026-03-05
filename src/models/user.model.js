@@ -8,7 +8,6 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone: String,
     favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: "Property" }],
-    anonymous_token: String,
     active: { type: Boolean, default: true },
     alertsEnabled: { type: Boolean, default: false },
     lastAlertEmailAt: Date,
