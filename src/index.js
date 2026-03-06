@@ -156,6 +156,7 @@ app.use("/api/inbox", require("./routes/inbox.routes"));
 app.use("/api/activity", require("./routes/activity.routes"));
 app.use("/api/alerts", require("./routes/alert.routes"));
 app.use("/api/ai", require("./routes/ai-chat.routes"));
+app.use("/api/ai", require("./routes/ai-search.routes"));
 
 // Health check
 app.get("/api/health", (req, res) => {

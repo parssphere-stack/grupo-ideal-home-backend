@@ -26,191 +26,19 @@
 const express = require("express");
 const router = express.Router();
 const Property = require("../models/property.model");
-const Agent = require("../models/agent.model");
 const mongoose = require("mongoose");
+const { searchProperties } = require("../services/property-search.service");
 
 // ── GET /api/properties ─────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
-    const q = req.query;
-
-    // ── Build filter ─────────────────────────────────────────
-    const filter = { status: "active", is_particular: true };
-
-    // Full-text search
-    if (q.search && q.search.trim()) {
-      filter.$text = { $search: q.search.trim() };
-    }
-
-    // City
-    if (q.city && q.city !== "all") {
-      filter["location.city"] = { $regex: q.city, $options: "i" };
-    }
-
-    // Operation
-    if (q.operation && ["sale", "rent"].includes(q.operation)) {
-      filter.operation = q.operation;
-    }
-
-    // Type
-    if (q.type) {
-      const types = q.type
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-      if (types.length === 1) filter.type = types[0];
-      else if (types.length > 1) filter.type = { $in: types };
-    }
-
-    // Price range
-    const priceFilter = {};
-    if (q.min_price) priceFilter.$gte = Number(q.min_price);
-    if (q.max_price) priceFilter.$lte = Number(q.max_price);
-    if (Object.keys(priceFilter).length) filter.price = priceFilter;
-
-    // Rooms
-    const roomsFilter = {};
-    if (q.min_rooms) roomsFilter.$gte = Number(q.min_rooms);
-    if (q.max_rooms) roomsFilter.$lte = Number(q.max_rooms);
-    if (Object.keys(roomsFilter).length)
-      filter["features.bedrooms"] = roomsFilter;
-
-    // Size
-    const sizeFilter = {};
-    if (q.min_size) sizeFilter.$gte = Number(q.min_size);
-    if (q.max_size) sizeFilter.$lte = Number(q.max_size);
-    if (Object.keys(sizeFilter).length)
-      filter["features.size_sqm"] = sizeFilter;
-
-    // Boolean features
-    if (q.has_elevator === "1") filter["features.has_elevator"] = true;
-    if (q.has_parking === "1") filter["features.has_parking"] = true;
-    if (q.has_terrace === "1") filter["features.has_terrace"] = true;
-    if (q.has_pool === "1") filter["features.has_pool"] = true;
-    if (q.is_exterior === "1") filter["features.is_exterior"] = true;
-
-    // Exclude already-assigned properties
-    if (q.excludeAssigned === "1") {
-      const allAgents = await Agent.find({}, "assignedProperties").lean();
-      const assignedIds = allAgents.flatMap((a) => a.assignedProperties || []);
-      if (assignedIds.length) filter._id = { $nin: assignedIds };
-    }
-
-    // Geo filter (radius)
-    if (q.lat && q.lng && q.radius_km) {
-      const lat = parseFloat(q.lat);
-      const lng = parseFloat(q.lng);
-      const radiusRad = parseFloat(q.radius_km) / 6371; // Earth radius km
-      filter["location.latitude"] = {
-        $gte: lat - parseFloat(q.radius_km) / 111,
-        $lte: lat + parseFloat(q.radius_km) / 111,
-      };
-      filter["location.longitude"] = {
-        $gte: lng - parseFloat(q.radius_km) / 80,
-        $lte: lng + parseFloat(q.radius_km) / 80,
-      };
-    }
-
-    // ── Sort ─────────────────────────────────────────────────
-    let sort = { createdAt: -1 }; // default: newest
-    const sortParam = q.sort || "newest";
-    const sortMap = {
-      newest: { createdAt: -1 },
-      oldest: { createdAt: 1 },
-      price_asc: { price: 1 },
-      price_desc: { price: -1 },
-      size_desc: { "features.size_sqm": -1 },
-      relevance: filter.$text
-        ? { score: { $meta: "textScore" }, createdAt: -1 }
-        : { createdAt: -1 },
-    };
-    sort = sortMap[sortParam] || sort;
-
-    // ── Pagination ───────────────────────────────────────────
-    const limit = Math.min(parseInt(q.limit) || 24, 10000);
-    const page = Math.max(parseInt(q.page) || 1, 1);
-    const skip = (page - 1) * limit;
-
-    // ── Project fields (frontend needs) ─────────────────────
-    const projection = {
-      idealista_id: 1,
-      title: 1,
-      price: 1,
-      price_per_sqm: 1,
-      type: 1,
-      operation: 1,
-      location: 1,
-      features: 1,
-      images: { $slice: 3 }, // only first 3 images for list
-      url: 1,
-      contact: 1,
-      is_particular: 1,
-      createdAt: 1,
-      scraped_at: 1,
-      ...(filter.$text ? { score: { $meta: "textScore" } } : {}),
-    };
-
-    // ── Execute ──────────────────────────────────────────────
-    const [properties, total] = await Promise.all([
-      Property.find(filter, projection)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Property.countDocuments(filter),
-    ]);
-
-    // ── Normalize for frontend compatibility ─────────────────
-    // Frontend expects: rooms, bathrooms, size, floor, hasLift, exterior
-    // contactInfo.phone, address.city, address.neighborhood, etc.
-    const normalized = properties.map((p) => ({
-      _id: p._id,
-      idealista_id: p.idealista_id,
-      title: p.title,
-      price: p.price,
-      priceByArea: p.price_per_sqm,
-      operation: p.operation,
-      propertyType: p.type,
-      rooms: p.features?.bedrooms,
-      bathrooms: p.features?.bathrooms,
-      size: p.features?.size_sqm,
-      floor: p.features?.floor,
-      hasLift: p.features?.has_elevator,
-      hasParking: p.features?.has_parking,
-      hasTerrace: p.features?.has_terrace,
-      hasPool: p.features?.has_pool,
-      exterior: p.features?.is_exterior,
-      images: p.images || [],
-      url: p.url,
-      is_particular: p.is_particular,
-      address: {
-        street: p.location?.address,
-        city: p.location?.city,
-        district: p.location?.district,
-        neighborhood: p.location?.neighborhood,
-        province: p.location?.province,
-      },
-      location: {
-        latitude: p.location?.latitude,
-        longitude: p.location?.longitude,
-      },
-      contactInfo: {
-        phone: p.contact?.phone,
-        contactName: p.contact?.name,
-        userType: "private",
-      },
-      createdAt: p.createdAt,
-      scraped_at: p.scraped_at,
-      // text score if search
-      _score: p.score,
-    }));
-
+    const result = await searchProperties(req.query);
     res.json({
-      data: normalized,
-      total,
-      page,
-      pages: Math.ceil(total / limit),
-      limit,
+      data: result.properties,
+      total: result.total,
+      page: result.page,
+      pages: result.pages,
+      limit: parseInt(req.query.limit) || 24,
     });
   } catch (err) {
     console.error("Properties error:", err);
