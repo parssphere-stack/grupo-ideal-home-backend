@@ -120,6 +120,7 @@ async function searchProperties(params) {
   let sort = { createdAt: -1 };
   const sortParam = q.sort || "newest";
   const sortMap = {
+    // Named sort values (used by AI search + legacy)
     newest: { createdAt: -1 },
     oldest: { createdAt: 1 },
     price_asc: { price: 1 },
@@ -128,6 +129,11 @@ async function searchProperties(params) {
     relevance: filter.$text
       ? { score: { $meta: "textScore" }, createdAt: -1 }
       : { createdAt: -1 },
+    // Frontend sort values (dash prefix = descending)
+    "-scraped_at": { scraped_at: -1 },
+    price: { price: 1 },
+    "-price": { price: -1 },
+    "-size": { "features.size_sqm": -1 },
   };
   sort = sortMap[sortParam] || sort;
 
@@ -138,6 +144,7 @@ async function searchProperties(params) {
 
   // ── Project fields ───────────────────────────────────────
   const projection = {
+    code: 1,
     idealista_id: 1,
     title: 1,
     price: 1,
@@ -146,7 +153,7 @@ async function searchProperties(params) {
     operation: 1,
     location: 1,
     features: 1,
-    images: { $slice: 3 },
+    images: 1,
     url: 1,
     contact: 1,
     is_particular: 1,
@@ -164,12 +171,13 @@ async function searchProperties(params) {
   // ── Normalize for frontend compatibility ─────────────────
   const normalized = properties.map((p) => ({
     _id: p._id,
+    code: p.code,
     idealista_id: p.idealista_id,
     title: p.title,
     price: p.price,
     priceByArea: p.price_per_sqm,
     operation: p.operation,
-    propertyType: p.type,
+    type: p.type,
     rooms: p.features?.bedrooms,
     bathrooms: p.features?.bathrooms,
     size: p.features?.size_sqm,
@@ -182,21 +190,19 @@ async function searchProperties(params) {
     images: p.images || [],
     url: p.url,
     is_particular: p.is_particular,
-    address: {
-      street: p.location?.address,
+    location: {
       city: p.location?.city,
       district: p.location?.district,
       neighborhood: p.location?.neighborhood,
+      zone: p.location?.neighborhood || p.location?.district,
       province: p.location?.province,
-    },
-    location: {
+      address: p.location?.address,
       latitude: p.location?.latitude,
       longitude: p.location?.longitude,
     },
-    contactInfo: {
+    contact: {
       phone: p.contact?.phone,
-      contactName: p.contact?.name,
-      userType: "private",
+      name: p.contact?.name,
     },
     createdAt: p.createdAt,
     scraped_at: p.scraped_at,
