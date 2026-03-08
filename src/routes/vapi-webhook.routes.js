@@ -627,20 +627,10 @@ const END_MESSAGES = {
   fi: "Kiitos yhteydenotosta Grupo Ideal Homeen! Toivottavasti olin avuksi. Nähdään!",
 };
 
-// ── Language-specific Azure voices for natural TTS ──────────
-const AZURE_VOICES = {
-  es: "es-ES-ElviraNeural",
-  en: "en-US-JennyNeural",
-  fr: "fr-FR-DeniseNeural",
-  de: "de-DE-KatjaNeural",
-  it: "it-IT-ElsaNeural",
-  nl: "nl-NL-ColetteNeural",
-  ru: "ru-RU-SvetlanaNeural",
-  pl: "pl-PL-ZofiaNeural",
-  da: "da-DK-ChristelNeural",
-  sv: "sv-SE-SofieNeural",
-  fi: "fi-FI-NooraNeural",
-};
+// ── Azure Multilingual Voice ─────────────────────────────────
+// Uses a single multilingual voice that auto-adapts to whatever language
+// the user speaks — no need to pick per-language voices.
+const MULTILINGUAL_VOICE = "en-US-AvaMultilingualNeural";
 
 function getAssistantConfig(lang = "es") {
   const serverUrl = process.env.VAPI_SERVER_URL || "https://grupo-ideal-home-backend-production.up.railway.app/api/vapi/webhook";
@@ -654,7 +644,7 @@ function getAssistantConfig(lang = "es") {
         model: "gpt-4o-mini",
         systemMessage: `You are Sofia, a deeply knowledgeable senior real estate consultant at Grupo Ideal Home — specializing in properties in Madrid and Málaga, Spain. 15 years of experience. You genuinely care about finding the perfect home for every client.
 
-LANGUAGE: Detect and match the user's language. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi. Default: Spanish.
+LANGUAGE RULE (CRITICAL): You MUST detect the language the user speaks and ALWAYS reply in that SAME language. If they speak English, reply in English. If they speak French, reply in French. If they speak German, reply in German. If they speak Russian, reply in Russian. Match their language EXACTLY — do NOT default to Spanish unless they speak Spanish. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi, pt, ar, zh, ja, ko.
 
 PERSONALITY — You are a trusted advisor, NOT a chatbot:
 - Speak like a knowledgeable friend — warm, confident, natural
@@ -772,7 +762,7 @@ PRICE CONTEXT:
       },
       voice: {
         provider: "azure",
-        voiceId: AZURE_VOICES[lang] || AZURE_VOICES.es,
+        voiceId: MULTILINGUAL_VOICE,
       },
       // ── Conversation behavior ──
       // Let user interrupt anytime — AI stops talking and listens
