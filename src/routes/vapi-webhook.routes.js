@@ -402,6 +402,36 @@ async function executeGetPropertyDetails(params, session) {
   return details.join(" | ");
 }
 
+async function executeGetNeighborhoodInfo(params) {
+  const { neighborhood, city } = params;
+  const match = { status: "active" };
+  const nRe = new RegExp(neighborhood.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  match.$or = [
+    { "location.neighborhood": nRe },
+    { "location.district": nRe },
+    { "address.neighborhood": nRe },
+    { "address.district": nRe },
+  ];
+  if (city) match["location.city"] = new RegExp(city, "i");
+
+  const props = await Property.find(match).lean();
+  if (!props.length) return `No properties found in "${neighborhood}".`;
+
+  const rent = props.filter((p) => p.operation === "rent");
+  const sale = props.filter((p) => p.operation === "sale");
+  const avg = (arr) => arr.length ? Math.round(arr.reduce((s, p) => s + (p.price || 0), 0) / arr.length) : null;
+
+  const lines = [`NEIGHBORHOOD: ${neighborhood} (${props[0]?.location?.city || city || "?"})`];
+  lines.push(`TOTAL: ${props.length} properties`);
+  if (rent.length) lines.push(`RENT: ${rent.length} available, avg ${avg(rent)?.toLocaleString("es-ES")}€/month`);
+  if (sale.length) lines.push(`SALE: ${sale.length} available, avg ${avg(sale)?.toLocaleString("es-ES")}€`);
+  const pools = props.filter((p) => p.hasPool || p.features?.has_pool).length;
+  const terraces = props.filter((p) => p.hasTerrace || p.features?.has_terrace).length;
+  if (pools || terraces) lines.push(`FEATURES: ${pools} with pool, ${terraces} with terrace`);
+
+  return lines.join(" | ");
+}
+
 // ── Detect language from VAPI call metadata ─────────────────
 function detectLangFromCall(message) {
   // VAPI may send language info in call metadata or assistant overrides
@@ -455,6 +485,8 @@ router.post("/webhook", async (req, res) => {
             result = await executeSearchProperties(params, session);
           } else if (toolName === "get_property_details") {
             result = await executeGetPropertyDetails(params, session);
+          } else if (toolName === "get_neighborhood_info") {
+            result = await executeGetNeighborhoodInfo(params, session);
           } else {
             result = s.unknownTool;
           }
@@ -579,6 +611,7 @@ SEARCH BEHAVIOR:
 - When refining ("cheaper", "with terrace") → keep previous filters, change only what's requested
 - No results → suggest ONE specific change (raise budget by X, try nearby neighborhood)
 - Need info → ask naturally: "Are you looking to rent or buy?"
+- When user asks about a neighborhood/area → call get_neighborhood_info
 
 NEIGHBORHOODS:
 Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa
@@ -623,6 +656,21 @@ Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Ca
                   property_index: { type: "integer", description: "Property number from last search (1, 2, 3...)." },
                   property_id: { type: "string", description: "Property ID or code." },
                 },
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "get_neighborhood_info",
+              description: "Get neighborhood market stats — average prices, available properties, features. Call when user asks about an area ('How is Chamberí?', 'Is Salamanca expensive?').",
+              parameters: {
+                type: "object",
+                properties: {
+                  neighborhood: { type: "string", description: "Neighborhood or district name." },
+                  city: { type: "string", description: 'Optional: "Madrid" or "Málaga".' },
+                },
+                required: ["neighborhood"],
               },
             },
           },

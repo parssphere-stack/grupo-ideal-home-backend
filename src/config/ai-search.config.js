@@ -130,8 +130,34 @@ Use property_index (1-based) to reference properties from the last search.`,
   },
 };
 
+// ── Tool: get_neighborhood_info ──────────────────────────────
+const GET_NEIGHBORHOOD_INFO_TOOL = {
+  name: "get_neighborhood_info",
+  description: `Get neighborhood/area insights — average prices, property counts, and market stats. Call this when:
+- User asks about a neighborhood ("How's Chamberí?", "Tell me about Teatinos")
+- User asks about market conditions ("Is Salamanca expensive?", "What's the average rent in Centro?")
+- User wants to compare areas ("Which is cheaper, Malasaña or Lavapiés?")
+This gives an overview of what's available in a specific area.`,
+  input_schema: {
+    type: "object",
+    properties: {
+      neighborhood: {
+        type: "string",
+        description:
+          "Neighborhood or district name to get info about. E.g. 'Chamberí', 'Teatinos', 'Centro'.",
+      },
+      city: {
+        type: "string",
+        description:
+          'City. "Madrid" or "Málaga". Helps narrow results if neighborhood name is ambiguous.',
+      },
+    },
+    required: ["neighborhood"],
+  },
+};
+
 // ── All tools ───────────────────────────────────────────────
-const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL];
+const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL, GET_NEIGHBORHOOD_INFO_TOOL];
 
 /**
  * Build the system prompt for the AI search agent.
@@ -207,4 +233,4 @@ function detectLanguage(text) {
   return "Spanish";
 }
 
-module.exports = { TOOLS, SEARCH_TOOL, getSearchSystemPrompt, detectLanguage };
+module.exports = { TOOLS, SEARCH_TOOL, GET_NEIGHBORHOOD_INFO_TOOL, getSearchSystemPrompt, detectLanguage };

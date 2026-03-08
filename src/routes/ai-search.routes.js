@@ -409,6 +409,75 @@ async function executeTool(toolName, toolInput, session) {
       };
     }
 
+    case "get_neighborhood_info": {
+      const { neighborhood, city } = toolInput;
+      const match = { status: "active" };
+      // Match neighborhood, district, or city fields
+      const nRe = new RegExp(neighborhood.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      match.$or = [
+        { "location.neighborhood": nRe },
+        { "location.district": nRe },
+        { "address.neighborhood": nRe },
+        { "address.district": nRe },
+      ];
+      if (city) match["location.city"] = new RegExp(city, "i");
+
+      const props = await Property.find(match).lean();
+      if (!props.length) {
+        return {
+          properties: [],
+          total: 0,
+          data: JSON.stringify({
+            neighborhood,
+            error: `No properties found in "${neighborhood}". It may not be in our database.`,
+          }),
+        };
+      }
+
+      const rentProps = props.filter((p) => p.operation === "rent");
+      const saleProps = props.filter((p) => p.operation === "sale");
+      const avgPrice = (arr) => arr.length ? Math.round(arr.reduce((s, p) => s + (p.price || 0), 0) / arr.length) : null;
+      const minPrice = (arr) => arr.length ? Math.min(...arr.map((p) => p.price).filter(Boolean)) : null;
+      const maxPrice = (arr) => arr.length ? Math.max(...arr.map((p) => p.price).filter(Boolean)) : null;
+      const avgSize = (arr) => {
+        const sizes = arr.map((p) => p.size || p.features?.size_sqm).filter(Boolean);
+        return sizes.length ? Math.round(sizes.reduce((s, v) => s + v, 0) / sizes.length) : null;
+      };
+
+      const info = {
+        neighborhood,
+        city: props[0]?.location?.city || city || "Unknown",
+        total_properties: props.length,
+        rent: {
+          count: rentProps.length,
+          avg_price: avgPrice(rentProps),
+          min_price: minPrice(rentProps),
+          max_price: maxPrice(rentProps),
+          avg_size_sqm: avgSize(rentProps),
+        },
+        sale: {
+          count: saleProps.length,
+          avg_price: avgPrice(saleProps),
+          min_price: minPrice(saleProps),
+          max_price: maxPrice(saleProps),
+          avg_size_sqm: avgSize(saleProps),
+        },
+        common_types: [...new Set(props.map((p) => p.type).filter(Boolean))].slice(0, 5),
+        features_available: {
+          with_pool: props.filter((p) => p.hasPool || p.features?.has_pool).length,
+          with_terrace: props.filter((p) => p.hasTerrace || p.features?.has_terrace).length,
+          with_parking: props.filter((p) => p.hasParking || p.features?.has_parking).length,
+          with_elevator: props.filter((p) => p.hasLift || p.features?.has_elevator).length,
+        },
+      };
+
+      return {
+        properties: [],
+        total: props.length,
+        data: JSON.stringify(info),
+      };
+    }
+
     default:
       return { properties: [], total: 0, data: JSON.stringify({ error: "Unknown tool" }) };
   }
