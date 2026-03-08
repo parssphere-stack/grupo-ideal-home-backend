@@ -20,6 +20,10 @@ const {
   getSearchSystemPrompt,
   detectLanguage,
 } = require("../config/ai-search.config");
+const jwt = require("jsonwebtoken");
+const User = require("../models/user.model");
+const InboxConversation = require("../models/inbox-conversation.model");
+const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
 
 // ── Rate limiter ────────────────────────────────────────────
 const limiter = rateLimit({
@@ -293,7 +297,7 @@ async function getInventoryStats() {
 
 // ── Tool executors ──────────────────────────────────────────
 
-async function executeTool(toolName, toolInput, session) {
+async function executeTool(toolName, toolInput, session, currentUser) {
   switch (toolName) {
     case "search_properties": {
       // Merge with last filters if this looks like a refinement
@@ -478,6 +482,43 @@ async function executeTool(toolName, toolInput, session) {
       };
     }
 
+    case "request_agent": {
+      if (!currentUser) {
+        return {
+          properties: [],
+          total: 0,
+          data: JSON.stringify({ error: "User not logged in. Ask them to create an account first." }),
+        };
+      }
+
+      const { property_id, reason, conversation_summary } = toolInput;
+
+      // Create inbox conversation as agent request
+      const convo = new InboxConversation({
+        user: currentUser._id,
+        property: property_id || undefined,
+        subject: `Agent Request: ${reason}`,
+        messages: [
+          {
+            sender: "system",
+            text: `🤖 AI Agent Request\n\nUser: ${currentUser.name} (${currentUser.email}${currentUser.phone ? `, ${currentUser.phone}` : ""})\nReason: ${reason}\n\nConversation summary:\n${conversation_summary}`,
+          },
+        ],
+      });
+
+      await convo.save();
+
+      return {
+        properties: [],
+        total: 0,
+        data: JSON.stringify({
+          success: true,
+          request_id: convo._id,
+          message: `Agent request created for ${currentUser.name}. An agent will contact them at ${currentUser.email}.`,
+        }),
+      };
+    }
+
     default:
       return { properties: [], total: 0, data: JSON.stringify({ error: "Unknown tool" }) };
   }
@@ -497,6 +538,16 @@ router.post("/search", limiter, async (req, res) => {
 
     const userMessage = String(message).trim();
 
+    // Optional auth — extract user if token present
+    let currentUser = null;
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        currentUser = await User.findById(decoded.id).select("name email phone").lean();
+      } catch {}
+    }
+
     // Session (async — may load from MongoDB)
     const { id: sessionId, session } = await getSession(session_id);
 
@@ -509,7 +560,7 @@ router.post("/search", limiter, async (req, res) => {
     const stats = await getInventoryStats();
 
     // System prompt (includes last search context if available)
-    const systemPrompt = getSearchSystemPrompt(lang, stats, session);
+    const systemPrompt = getSearchSystemPrompt(lang, stats, session, currentUser);
 
     // Add user message to history
     session.messages.push({ role: "user", content: userMessage });
@@ -543,7 +594,7 @@ router.post("/search", limiter, async (req, res) => {
         const { id, name, input } = aiResult.toolCall;
 
         // Execute the tool
-        const toolResult = await executeTool(name, input, session);
+        const toolResult = await executeTool(name, input, session, currentUser);
 
         if (name === "search_properties") {
           filtersApplied = input || {};

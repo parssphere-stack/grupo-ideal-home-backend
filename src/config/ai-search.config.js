@@ -156,8 +156,37 @@ This gives an overview of what's available in a specific area.`,
   },
 };
 
+// ── Tool: request_agent ─────────────────────────────────────
+const REQUEST_AGENT_TOOL = {
+  name: "request_agent",
+  description: `Request a human agent to contact the user about a property. Call this when:
+- User asks to speak with a real person / agent ("quiero hablar con un agente", "connect me with someone")
+- User wants to schedule a visit or make an offer
+- User needs help that goes beyond property search
+IMPORTANT: If the user is logged in, their contact info is already available — do NOT ask for name/email/phone. Just call this tool directly.
+If the user is NOT logged in, ask them to create an account first so the agent can reach them.`,
+  input_schema: {
+    type: "object",
+    properties: {
+      property_id: {
+        type: "string",
+        description: "ID of the property the user is interested in (from last search results or details).",
+      },
+      reason: {
+        type: "string",
+        description: "Brief summary of what the user wants: visit, offer, more info, etc.",
+      },
+      conversation_summary: {
+        type: "string",
+        description: "2-3 sentence summary of the conversation so far — what the user searched for and what they're interested in.",
+      },
+    },
+    required: ["reason", "conversation_summary"],
+  },
+};
+
 // ── All tools ───────────────────────────────────────────────
-const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL, GET_NEIGHBORHOOD_INFO_TOOL];
+const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL, GET_NEIGHBORHOOD_INFO_TOOL, REQUEST_AGENT_TOOL];
 
 /**
  * Build the system prompt for the AI search agent.
@@ -165,7 +194,7 @@ const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL, GET_NEIGHBORHOOD_INFO_TOO
  * @param {Object} stats - Live inventory stats
  * @param {Object} session - Current session (for context)
  */
-function getSearchSystemPrompt(language, stats, session) {
+function getSearchSystemPrompt(language, stats, session, user) {
   let contextBlock = "";
 
   // If there are previous filters, tell Claude about them
@@ -196,6 +225,12 @@ BEHAVIOR:
 - If you need more info, ask 1-2 clarifying questions (city? budget? buy or rent?)
 - Be warm, professional, and concise — like a trusted advisor, not a chatbot
 
+AGENT REQUESTS:
+- When the user wants to talk to a human agent, schedule a visit, or make an offer → call request_agent
+- If the user IS LOGGED IN (you'll see USER_INFO below), call request_agent immediately — do NOT ask for their name, email, or phone
+- If the user is NOT logged in, politely ask them to create an account first: "Para conectarte con un agente, necesitas crear una cuenta. Puedes hacerlo desde el icono 👤 arriba."
+- After calling request_agent, confirm that their request has been submitted and an agent will contact them soon
+
 CONVERSATIONAL GUIDELINES:
 - Greetings → Respond warmly and ask what they're looking for
 - Vague requests → Ask 1-2 key questions (city, budget, buy/rent)
@@ -212,7 +247,8 @@ PRICE CONTEXT:
 - Madrid rent: 700-2,500€/month depending on zone and size
 - Madrid sale: 150,000-800,000€ for apartments
 - Málaga rent: 600-1,800€/month
-- Málaga sale: 120,000-500,000€ for apartments`;
+- Málaga sale: 120,000-500,000€ for apartments
+${user ? `\nUSER_INFO (logged in): Name: ${user.name}, Email: ${user.email}${user.phone ? `, Phone: ${user.phone}` : ''}. This user is registered — do NOT ask for contact details when requesting an agent.` : '\nUSER_INFO: Not logged in. If they want to connect with an agent, ask them to create an account first.'}`;
 }
 
 /**
