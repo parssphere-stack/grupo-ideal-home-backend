@@ -609,9 +609,11 @@ const AZURE_VOICES = {
 };
 
 function getAssistantConfig(lang = "es") {
+  const serverUrl = process.env.VAPI_SERVER_URL || "https://grupo-ideal-home-backend-production.up.railway.app/api/vapi/webhook";
   return {
     assistant: {
       name: "Sofia",
+      serverUrl,
       firstMessage: FIRST_MESSAGES[lang] || FIRST_MESSAGES.es,
       model: {
         provider: "openai",
@@ -634,39 +636,50 @@ CONVERSATION RULES — THIS IS A PHONE CALL:
 - ONE question per turn. Never stack questions.
 - If user wants to talk to a human agent, collect their name and phone, then call request_human_agent
 
+CRITICAL — TOOL PARAMETER RULES (follow these EXACTLY):
+1. OPERATION: When user says "rent/alquiler/louer/miete" → operation: "rent". When user says "buy/comprar/acheter/kaufen" → operation: "sale". ALWAYS set this when the user specifies it. NEVER ignore or swap it.
+2. CITY: You MUST set the correct city based on the neighborhood:
+   - Madrid neighborhoods: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa, Usera, Prosperidad, Chamartín
+   - Málaga neighborhoods: Teatinos, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Carranque, El Limonar, Huelin, La Malagueta
+   - If user mentions a Madrid neighborhood → city: "Madrid"
+   - If user mentions a Málaga neighborhood → city: "Málaga"
+   - "Centro" exists in both — ask which city if unclear
+3. SEARCH: Put the neighborhood/district/street name in the "search" parameter. Example: user says "Chamberí" → city: "Madrid", search: "Chamberí"
+4. NEVER guess or default parameters the user didn't mention. If unsure, ASK.
+
 TOOLS:
-- search_properties → when they describe what they want
+- search_properties → when they describe what they want. ALWAYS include operation + city + search when the user provides them.
 - get_property_details → when they ask about a specific result
 - get_neighborhood_info → when they ask about an area
 - request_human_agent → when they want to speak with a person. Collect name + phone first.
 
-NEIGHBORHOODS:
-Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa
-Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Carranque, El Limonar, Huelin`,
+PRICE CONTEXT:
+- Madrid rent: 700-2,500€/month | Madrid sale: 150,000-800,000€
+- Málaga rent: 600-1,800€/month | Málaga sale: 120,000-500,000€`,
         tools: [
           {
             type: "function",
             function: {
               name: "search_properties",
-              description: "Search properties. Call when user describes what they want or refines a previous search.",
+              description: "Search the property database. Call when user describes what they want or refines a previous search. When REFINING, include ALL previous filters plus the changes. Do NOT drop filters the user set before unless they explicitly ask to remove them.",
               parameters: {
                 type: "object",
                 properties: {
-                  city: { type: "string", description: 'City: "Madrid" or "Málaga".' },
-                  operation: { type: "string", enum: ["sale", "rent"] },
+                  city: { type: "string", description: 'City to search in. MUST be "Madrid" or "Málaga". Infer from neighborhood: Chamberí/Salamanca/Retiro/Malasaña/Chueca/Lavapiés/Tetuán/Hortaleza/Vallecas/Arganzuela/Carabanchel/La Latina/Moncloa → "Madrid". Teatinos/Pedregalejo/El Palo/La Trinidad/Ciudad Jardín/Carranque/El Limonar/Huelin/La Malagueta → "Málaga".' },
+                  operation: { type: "string", enum: ["sale", "rent"], description: "'sale' for buying/comprar, 'rent' for renting/alquiler. ALWAYS set this when the user specifies buy or rent." },
                   type: { type: "string", enum: ["apartment", "house", "villa", "penthouse", "studio", "duplex"] },
-                  min_price: { type: "number" },
-                  max_price: { type: "number" },
-                  min_rooms: { type: "integer" },
-                  max_rooms: { type: "integer" },
-                  min_size: { type: "number" },
-                  max_size: { type: "number" },
+                  min_price: { type: "number", description: "Minimum price in euros. For rent: monthly. For sale: total." },
+                  max_price: { type: "number", description: "Maximum price in euros. For rent: monthly. For sale: total." },
+                  min_rooms: { type: "integer", description: "Minimum bedrooms." },
+                  max_rooms: { type: "integer", description: "Maximum bedrooms." },
+                  min_size: { type: "number", description: "Minimum size in m²." },
+                  max_size: { type: "number", description: "Maximum size in m²." },
                   has_elevator: { type: "boolean" },
                   has_parking: { type: "boolean" },
                   has_terrace: { type: "boolean" },
                   has_pool: { type: "boolean" },
                   is_exterior: { type: "boolean" },
-                  search: { type: "string", description: "Neighborhood, street, keywords." },
+                  search: { type: "string", description: "Neighborhood, district, street name, or keywords. Examples: 'Chamberí', 'near beach', 'Salamanca'. Put the neighborhood name here." },
                   sort: { type: "string", enum: ["price_asc", "price_desc", "newest", "size_desc"] },
                 },
               },
@@ -690,12 +703,12 @@ Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Ca
             type: "function",
             function: {
               name: "get_neighborhood_info",
-              description: "Get neighborhood market stats. Call when user asks about an area.",
+              description: "Get neighborhood/area insights — average prices, property counts, market stats. Call when user asks about an area ('How is Chamberí?', 'Is Salamanca expensive?', 'What's the average rent in Centro?').",
               parameters: {
                 type: "object",
                 properties: {
-                  neighborhood: { type: "string" },
-                  city: { type: "string" },
+                  neighborhood: { type: "string", description: "Neighborhood or district name. E.g. 'Chamberí', 'Teatinos', 'Salamanca'." },
+                  city: { type: "string", description: '"Madrid" or "Málaga". Infer from neighborhood name. Helps narrow results.' },
                 },
                 required: ["neighborhood"],
               },

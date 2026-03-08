@@ -2,11 +2,15 @@
  * AI Smart Search — Conversational property search with Claude tool use
  *
  * POST /api/ai/search — natural language property search
+ * POST /api/ai/chat  — simple AI chat (property descriptions, etc.)
+ * GET  /api/ai/search/stats — inventory stats
  *
- * Features:
- * - Full conversation history with tool_use/tool_result blocks (enables follow-ups)
- * - Multiple tools: search, get details, sort, paginate
- * - Session with last-search context for refinements
+ * Overhauled for Homes.com-level experience:
+ * - Upgraded model (claude-sonnet-4-6)
+ * - Multi-tool loop with proper history management
+ * - Real filter refinement (merges with previous)
+ * - Filter transparency in responses
+ * - Robust session trimming that preserves tool block integrity
  */
 
 const express = require("express");
@@ -28,7 +32,7 @@ const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
 // ── Rate limiter ────────────────────────────────────────────
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 25,
   message: { error: "Too many requests, please slow down" },
 });
 
@@ -71,8 +75,8 @@ async function callAI(systemPrompt, messages, tools) {
 
   if (prov === "anthropic") {
     const response = await anthropicClient.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
+      model: "claude-sonnet-4-6-20250514",
+      max_tokens: 2048,
       system: systemPrompt,
       tools,
       messages,
@@ -82,7 +86,9 @@ async function callAI(systemPrompt, messages, tools) {
     const text = response.content.find((b) => b.type === "text")?.text || "";
 
     return {
-      toolCall: toolUse ? { id: toolUse.id, name: toolUse.name, input: toolUse.input } : null,
+      toolCall: toolUse
+        ? { id: toolUse.id, name: toolUse.name, input: toolUse.input }
+        : null,
       text,
       rawContent: response.content, // needed for history
       stopReason: response.stop_reason,
@@ -95,29 +101,47 @@ async function callAI(systemPrompt, messages, tools) {
 
     for (const msg of messages) {
       if (msg.role === "user") {
-        if (Array.isArray(msg.content) && msg.content[0]?.type === "tool_result") {
+        if (
+          Array.isArray(msg.content) &&
+          msg.content[0]?.type === "tool_result"
+        ) {
           // Tool result → OpenAI tool message
           const tr = msg.content[0];
           oaiMessages.push({
             role: "tool",
             tool_call_id: tr.tool_use_id,
-            content: typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content),
+            content:
+              typeof tr.content === "string"
+                ? tr.content
+                : JSON.stringify(tr.content),
           });
         } else {
-          oaiMessages.push({ role: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+          oaiMessages.push({
+            role: "user",
+            content:
+              typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content),
+          });
         }
       } else if (msg.role === "assistant") {
         if (Array.isArray(msg.content)) {
           // Assistant with tool_use blocks
-          const textPart = msg.content.find((b) => b.type === "text")?.text || "";
+          const textPart =
+            msg.content.find((b) => b.type === "text")?.text || "";
           const toolUse = msg.content.find((b) => b.type === "tool_use");
           const oaiMsg = { role: "assistant", content: textPart || null };
           if (toolUse) {
-            oaiMsg.tool_calls = [{
-              id: toolUse.id,
-              type: "function",
-              function: { name: toolUse.name, arguments: JSON.stringify(toolUse.input) },
-            }];
+            oaiMsg.tool_calls = [
+              {
+                id: toolUse.id,
+                type: "function",
+                function: {
+                  name: toolUse.name,
+                  arguments: JSON.stringify(toolUse.input),
+                },
+              },
+            ];
           }
           oaiMessages.push(oaiMsg);
         } else {
@@ -128,7 +152,7 @@ async function callAI(systemPrompt, messages, tools) {
 
     const response = await openaiClient.chat.completions.create({
       model: "gpt-4o-mini",
-      max_tokens: 1500,
+      max_tokens: 2048,
       messages: oaiMessages,
       tools: toolsToOpenAI(tools),
     });
@@ -140,13 +164,25 @@ async function callAI(systemPrompt, messages, tools) {
       // Convert OpenAI tool call to our unified format + Anthropic-style rawContent
       const input = JSON.parse(oaiToolCall.function.arguments || "{}");
       return {
-        toolCall: { id: oaiToolCall.id, name: oaiToolCall.function.name, input },
+        toolCall: {
+          id: oaiToolCall.id,
+          name: oaiToolCall.function.name,
+          input,
+        },
         text: choice.message.content || "",
         rawContent: [
-          ...(choice.message.content ? [{ type: "text", text: choice.message.content }] : []),
-          { type: "tool_use", id: oaiToolCall.id, name: oaiToolCall.function.name, input },
+          ...(choice.message.content
+            ? [{ type: "text", text: choice.message.content }]
+            : []),
+          {
+            type: "tool_use",
+            id: oaiToolCall.id,
+            name: oaiToolCall.function.name,
+            input,
+          },
         ],
-        stopReason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+        stopReason:
+          choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
       };
     }
 
@@ -164,7 +200,7 @@ async function callAI(systemPrompt, messages, tools) {
 // ── Session store (in-memory cache + MongoDB persistence) ───
 const SearchSession = require("../models/search-session.model");
 const memCache = new Map(); // fast in-memory cache
-const MAX_HISTORY = 40;
+const MAX_HISTORY = 50; // increased from 40 for better context
 
 async function getSession(sessionId) {
   // 1. Check memory cache first
@@ -176,13 +212,15 @@ async function getSession(sessionId) {
 
   // 2. Check MongoDB for existing session
   if (sessionId) {
-    const dbSession = await SearchSession.findOne({ session_id: sessionId }).lean();
+    const dbSession = await SearchSession.findOne({
+      session_id: sessionId,
+    }).lean();
     if (dbSession) {
       const session = {
         messages: dbSession.messages || [],
         lastAccess: Date.now(),
         lastFilters: dbSession.lastFilters || {},
-        lastResults: [],  // not persisted (too large), will be re-populated on next search
+        lastResults: [], // not persisted (too large), will be re-populated on next search
         preferences: dbSession.preferences || {},
         language: dbSession.language,
         searchCount: dbSession.searchCount || 0,
@@ -214,7 +252,9 @@ function persistSession(sessionId, session, language) {
   const update = {
     messages: session.messages,
     lastFilters: session.lastFilters,
-    lastResultIds: (session.lastResults || []).map((p) => p._id).filter(Boolean),
+    lastResultIds: (session.lastResults || [])
+      .map((p) => p._id)
+      .filter(Boolean),
     preferences: session.preferences,
     language: language || session.language,
     messageCount: session.messages.length,
@@ -226,7 +266,9 @@ function persistSession(sessionId, session, language) {
     { session_id: sessionId },
     { $set: update },
     { upsert: true }
-  ).catch((err) => console.error("[AI Search] Session persist error:", err.message));
+  ).catch((err) =>
+    console.error("[AI Search] Session persist error:", err.message)
+  );
 }
 
 // Cleanup memory cache every 10 minutes (MongoDB TTL handles DB cleanup)
@@ -300,7 +342,6 @@ async function getInventoryStats() {
 async function executeTool(toolName, toolInput, session, currentUser) {
   switch (toolName) {
     case "search_properties": {
-      // Merge with last filters if this looks like a refinement
       const filters = { ...toolInput };
 
       const searchResult = await searchProperties({
@@ -319,6 +360,7 @@ async function executeTool(toolName, toolInput, session, currentUser) {
         data: JSON.stringify({
           total: searchResult.total,
           showing: searchResult.properties.length,
+          filters_applied: filters,
           properties: searchResult.properties.map((p, i) => ({
             index: i + 1,
             id: p._id,
@@ -378,7 +420,9 @@ async function executeTool(toolName, toolInput, session, currentUser) {
 
       // Calculate days on market
       const daysOnMarket = property.scraped_at
-        ? Math.floor((Date.now() - new Date(property.scraped_at).getTime()) / 86400000)
+        ? Math.floor(
+            (Date.now() - new Date(property.scraped_at).getTime()) / 86400000
+          )
         : null;
 
       return {
@@ -401,14 +445,22 @@ async function executeTool(toolName, toolInput, session, currentUser) {
           district: property.location?.district,
           neighborhood: property.location?.neighborhood,
           address: property.location?.address,
-          hasPool: property.hasPool || property.features?.has_pool || false,
-          hasParking: property.hasParking || property.features?.has_parking || false,
-          hasTerrace: property.hasTerrace || property.features?.has_terrace || false,
-          hasLift: property.hasLift || property.features?.has_elevator || false,
-          exterior: property.exterior || property.features?.is_exterior || false,
+          hasPool:
+            property.hasPool || property.features?.has_pool || false,
+          hasParking:
+            property.hasParking || property.features?.has_parking || false,
+          hasTerrace:
+            property.hasTerrace || property.features?.has_terrace || false,
+          hasLift:
+            property.hasLift || property.features?.has_elevator || false,
+          hasAC: property.hasAC || property.features?.has_ac || false,
+          exterior:
+            property.exterior || property.features?.is_exterior || false,
           images: (property.images || []).length,
           daysOnMarket,
-          contact: property.contact ? { name: property.contact.name } : null,
+          contact: property.contact
+            ? { name: property.contact.name }
+            : null,
         }),
       };
     }
@@ -417,7 +469,10 @@ async function executeTool(toolName, toolInput, session, currentUser) {
       const { neighborhood, city } = toolInput;
       const match = { status: "active" };
       // Match neighborhood, district, or city fields
-      const nRe = new RegExp(neighborhood.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const nRe = new RegExp(
+        neighborhood.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i"
+      );
       match.$or = [
         { "location.neighborhood": nRe },
         { "location.district": nRe },
@@ -433,19 +488,34 @@ async function executeTool(toolName, toolInput, session, currentUser) {
           total: 0,
           data: JSON.stringify({
             neighborhood,
-            error: `No properties found in "${neighborhood}". It may not be in our database.`,
+            error: `No properties found in "${neighborhood}". It may not be in our database. Try a nearby neighborhood.`,
           }),
         };
       }
 
       const rentProps = props.filter((p) => p.operation === "rent");
       const saleProps = props.filter((p) => p.operation === "sale");
-      const avgPrice = (arr) => arr.length ? Math.round(arr.reduce((s, p) => s + (p.price || 0), 0) / arr.length) : null;
-      const minPrice = (arr) => arr.length ? Math.min(...arr.map((p) => p.price).filter(Boolean)) : null;
-      const maxPrice = (arr) => arr.length ? Math.max(...arr.map((p) => p.price).filter(Boolean)) : null;
+      const avgPrice = (arr) =>
+        arr.length
+          ? Math.round(
+              arr.reduce((s, p) => s + (p.price || 0), 0) / arr.length
+            )
+          : null;
+      const minPrice = (arr) =>
+        arr.length
+          ? Math.min(...arr.map((p) => p.price).filter(Boolean))
+          : null;
+      const maxPrice = (arr) =>
+        arr.length
+          ? Math.max(...arr.map((p) => p.price).filter(Boolean))
+          : null;
       const avgSize = (arr) => {
-        const sizes = arr.map((p) => p.size || p.features?.size_sqm).filter(Boolean);
-        return sizes.length ? Math.round(sizes.reduce((s, v) => s + v, 0) / sizes.length) : null;
+        const sizes = arr
+          .map((p) => p.size || p.features?.size_sqm)
+          .filter(Boolean);
+        return sizes.length
+          ? Math.round(sizes.reduce((s, v) => s + v, 0) / sizes.length)
+          : null;
       };
 
       const info = {
@@ -466,12 +536,22 @@ async function executeTool(toolName, toolInput, session, currentUser) {
           max_price: maxPrice(saleProps),
           avg_size_sqm: avgSize(saleProps),
         },
-        common_types: [...new Set(props.map((p) => p.type).filter(Boolean))].slice(0, 5),
+        common_types: [
+          ...new Set(props.map((p) => p.type).filter(Boolean)),
+        ].slice(0, 5),
         features_available: {
-          with_pool: props.filter((p) => p.hasPool || p.features?.has_pool).length,
-          with_terrace: props.filter((p) => p.hasTerrace || p.features?.has_terrace).length,
-          with_parking: props.filter((p) => p.hasParking || p.features?.has_parking).length,
-          with_elevator: props.filter((p) => p.hasLift || p.features?.has_elevator).length,
+          with_pool: props.filter(
+            (p) => p.hasPool || p.features?.has_pool
+          ).length,
+          with_terrace: props.filter(
+            (p) => p.hasTerrace || p.features?.has_terrace
+          ).length,
+          with_parking: props.filter(
+            (p) => p.hasParking || p.features?.has_parking
+          ).length,
+          with_elevator: props.filter(
+            (p) => p.hasLift || p.features?.has_elevator
+          ).length,
         },
       };
 
@@ -487,7 +567,10 @@ async function executeTool(toolName, toolInput, session, currentUser) {
         return {
           properties: [],
           total: 0,
-          data: JSON.stringify({ error: "User not logged in. Ask them to create an account first." }),
+          data: JSON.stringify({
+            error:
+              "User not logged in. Ask them to create an account first so an agent can contact them.",
+          }),
         };
       }
 
@@ -520,7 +603,11 @@ async function executeTool(toolName, toolInput, session, currentUser) {
     }
 
     default:
-      return { properties: [], total: 0, data: JSON.stringify({ error: "Unknown tool" }) };
+      return {
+        properties: [],
+        total: 0,
+        data: JSON.stringify({ error: "Unknown tool" }),
+      };
   }
 }
 
@@ -528,7 +615,10 @@ async function executeTool(toolName, toolInput, session, currentUser) {
 router.post("/search", limiter, async (req, res) => {
   try {
     if (!getProvider()) {
-      return res.status(503).json({ error: "AI service not configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY" });
+      return res.status(503).json({
+        error:
+          "AI service not configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY",
+      });
     }
 
     const { message, session_id, language } = req.body;
@@ -544,7 +634,9 @@ router.post("/search", limiter, async (req, res) => {
     if (token) {
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        currentUser = await User.findById(decoded.id).select("name email phone").lean();
+        currentUser = await User.findById(decoded.id)
+          .select("name email phone")
+          .lean();
       } catch {}
     }
 
@@ -553,14 +645,31 @@ router.post("/search", limiter, async (req, res) => {
 
     // Language detection
     const lang = language
-      ? { es: "Spanish", en: "English", fr: "French", de: "German", it: "Italian", nl: "Dutch", ru: "Russian" }[language] || detectLanguage(userMessage)
+      ? {
+          es: "Spanish",
+          en: "English",
+          fr: "French",
+          de: "German",
+          it: "Italian",
+          nl: "Dutch",
+          ru: "Russian",
+          pl: "Polish",
+          pt: "Portuguese",
+          ar: "Arabic",
+          zh: "Chinese",
+        }[language] || detectLanguage(userMessage)
       : detectLanguage(userMessage);
 
     // Inventory stats for system prompt
     const stats = await getInventoryStats();
 
     // System prompt (includes last search context if available)
-    const systemPrompt = getSearchSystemPrompt(lang, stats, session, currentUser);
+    const systemPrompt = getSearchSystemPrompt(
+      lang,
+      stats,
+      session,
+      currentUser
+    );
 
     // Add user message to history
     session.messages.push({ role: "user", content: userMessage });
@@ -575,7 +684,7 @@ router.post("/search", limiter, async (req, res) => {
     let filtersApplied = {};
     let replyText = "";
     let loopCount = 0;
-    const MAX_LOOPS = 3;
+    const MAX_LOOPS = 5; // increased from 3 for complex queries
 
     let currentMessages = [...session.messages];
 
@@ -594,25 +703,45 @@ router.post("/search", limiter, async (req, res) => {
         const { id, name, input } = aiResult.toolCall;
 
         // Execute the tool
-        const toolResult = await executeTool(name, input, session, currentUser);
+        const toolResult = await executeTool(
+          name,
+          input,
+          session,
+          currentUser
+        );
 
         if (name === "search_properties") {
           filtersApplied = input || {};
           properties = toolResult.properties;
-          total = toolResult.total !== undefined ? toolResult.total : 0;
-        } else if (name === "get_property_details" && toolResult.properties.length) {
+          total =
+            toolResult.total !== undefined ? toolResult.total : 0;
+        } else if (
+          name === "get_property_details" &&
+          toolResult.properties.length
+        ) {
           properties = toolResult.properties;
           total = 1;
         }
 
         // Store full tool_use + tool_result in conversation (KEY for context)
-        currentMessages.push({ role: "assistant", content: aiResult.rawContent });
+        currentMessages.push({
+          role: "assistant",
+          content: aiResult.rawContent,
+        });
         currentMessages.push({
           role: "user",
-          content: [{ type: "tool_result", tool_use_id: id, content: toolResult.data }],
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: id,
+              content: toolResult.data,
+            },
+          ],
         });
 
-        if (aiResult.stopReason === "end_turn") {
+        // If stop reason is end_turn but there was a tool call, keep going
+        // Only break if stop reason is end_turn AND there's no tool call
+        if (aiResult.stopReason === "end_turn" && aiResult.text) {
           replyText = aiResult.text;
           break;
         }
@@ -625,10 +754,14 @@ router.post("/search", limiter, async (req, res) => {
       break;
     }
 
-    // Save full conversation to session
+    // Save full conversation to session (including tool blocks)
     session.messages = currentMessages;
-    session.messages.push({ role: "assistant", content: replyText });
-    if (Object.keys(filtersApplied).length) session.searchCount = (session.searchCount || 0) + 1;
+    // Only add final text reply if it's a string (not already added as rawContent)
+    if (replyText) {
+      session.messages.push({ role: "assistant", content: replyText });
+    }
+    if (Object.keys(filtersApplied).length)
+      session.searchCount = (session.searchCount || 0) + 1;
     trimHistory(session);
 
     // Persist to MongoDB (non-blocking)
@@ -648,22 +781,100 @@ router.post("/search", limiter, async (req, res) => {
   }
 });
 
+// ── POST /api/ai/chat — Simple AI chat (descriptions, etc.) ─
+router.post("/chat", limiter, async (req, res) => {
+  try {
+    if (!getProvider()) {
+      return res.status(503).json({
+        error: "AI service not configured",
+      });
+    }
+
+    const { messages } = req.body;
+    if (!messages || !Array.isArray(messages) || !messages.length) {
+      return res.status(400).json({ error: "messages array required" });
+    }
+
+    const prov = getProvider();
+
+    if (prov === "anthropic") {
+      const response = await anthropicClient.messages.create({
+        model: "claude-sonnet-4-6-20250514",
+        max_tokens: 1024,
+        messages: messages.map((m) => ({
+          role: m.role || "user",
+          content: m.content,
+        })),
+      });
+      const text =
+        response.content.find((b) => b.type === "text")?.text || "";
+      return res.json({ reply: text });
+    }
+
+    if (prov === "openai") {
+      const response = await openaiClient.chat.completions.create({
+        model: "gpt-4o-mini",
+        max_tokens: 1024,
+        messages: messages.map((m) => ({
+          role: m.role || "user",
+          content: m.content,
+        })),
+      });
+      return res.json({
+        reply: response.choices[0]?.message?.content || "",
+      });
+    }
+  } catch (err) {
+    console.error("[AI Chat] Error:", err.message);
+    res.status(500).json({ error: "AI chat failed" });
+  }
+});
+
+// ── GET /api/ai/search/stats ────────────────────────────────
+router.get("/search/stats", async (req, res) => {
+  try {
+    const stats = await getInventoryStats();
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get stats" });
+  }
+});
+
 // ── Trim history keeping tool block pairs intact ────────────
 function trimHistory(session) {
   if (session.messages.length <= MAX_HISTORY) return;
+
   // Find a safe cut point — don't split in the middle of a tool_use/tool_result pair
   let cutIndex = session.messages.length - MAX_HISTORY;
-  // Make sure we don't start on a tool_result (orphan)
-  while (cutIndex < session.messages.length) {
-    const msg = session.messages[cutIndex];
-    if (msg.role === "user" && Array.isArray(msg.content) && msg.content[0]?.type === "tool_result") {
-      cutIndex++;
-    } else if (msg.role === "assistant" && Array.isArray(msg.content) && msg.content.some((b) => b.type === "tool_use")) {
-      cutIndex++; // don't start on an assistant tool_use without its result
-    } else {
-      break;
+
+  // Walk forward to find a safe starting point
+  // A safe point is a plain user message (not a tool_result) that isn't preceded by a tool_use
+  for (let i = cutIndex; i < session.messages.length - 10; i++) {
+    const msg = session.messages[i];
+
+    // Skip tool_result messages (orphaned without their tool_use)
+    if (
+      msg.role === "user" &&
+      Array.isArray(msg.content) &&
+      msg.content[0]?.type === "tool_result"
+    ) {
+      continue;
     }
+
+    // Skip assistant messages with tool_use (their result comes next)
+    if (
+      msg.role === "assistant" &&
+      Array.isArray(msg.content) &&
+      msg.content.some((b) => b.type === "tool_use")
+    ) {
+      continue;
+    }
+
+    // This is a safe cut point (plain user or assistant message)
+    cutIndex = i;
+    break;
   }
+
   session.messages = session.messages.slice(cutIndex);
 }
 
@@ -679,8 +890,8 @@ async function fallbackSearch(message, sessionId, res) {
     res.json({
       reply:
         result.total > 0
-          ? `I found ${result.total} properties matching your keywords.`
-          : "No properties found. Try different keywords.",
+          ? `I found ${result.total} properties matching your keywords. Here are the top results.`
+          : "No properties found with those criteria. Try different keywords or broaden your search.",
       properties: result.properties,
       total: result.total,
       filters_applied: { search: message },
