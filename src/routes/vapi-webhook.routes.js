@@ -525,14 +525,45 @@ router.post("/webhook", async (req, res) => {
         session.lang = detectLangFromCall(message);
       }
 
-      const toolCallList = message.toolCallList || message.toolWithToolCallList || [];
+      // VAPI sends tool calls in different formats depending on version
+      let toolCallList = message.toolCallList || [];
+      // toolWithToolCallList wraps each tool with its toolCall
+      if (!toolCallList.length && message.toolWithToolCallList) {
+        toolCallList = message.toolWithToolCallList.map(t => ({
+          ...t.toolCall,
+          name: t.toolCall?.name || t.function?.name,
+          parameters: t.toolCall?.parameters || {},
+          function: t.toolCall?.function || t.function,
+        }));
+      }
+      console.log(`[VAPI] Processing ${toolCallList.length} tool calls, raw keys:`,
+        toolCallList.length ? Object.keys(toolCallList[0]).join(',') : 'empty');
       const s = getStrings(session.lang);
       const results = [];
 
       for (const tc of toolCallList) {
         const toolName = tc.name || tc.function?.name;
         const toolCallId = tc.id || tc.toolCall?.id;
-        const params = tc.parameters || tc.arguments || tc.toolCall?.parameters || {};
+
+        // Parse params from all possible VAPI formats
+        let params = tc.parameters || tc.toolCall?.parameters || {};
+        // VAPI often sends args as JSON string in function.arguments
+        if (!Object.keys(params).length && tc.function?.arguments) {
+          try {
+            params = typeof tc.function.arguments === "string"
+              ? JSON.parse(tc.function.arguments)
+              : tc.function.arguments;
+          } catch (e) { console.warn("[VAPI] Failed to parse function.arguments:", e.message); }
+        }
+        // Also check tc.arguments (may be string or object)
+        if (!Object.keys(params).length && tc.arguments) {
+          try {
+            params = typeof tc.arguments === "string"
+              ? JSON.parse(tc.arguments)
+              : tc.arguments;
+          } catch (e) { console.warn("[VAPI] Failed to parse tc.arguments:", e.message); }
+        }
+        console.log(`[VAPI] Tool: ${toolName}, params:`, JSON.stringify(params));
 
         let result = "";
 
