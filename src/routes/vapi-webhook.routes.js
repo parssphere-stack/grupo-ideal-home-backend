@@ -360,21 +360,29 @@ async function executeSearchProperties(params, session) {
   const maxPrice = Math.max(...prices);
   const neighborhoods = [...new Set(props.map((p) => p.location?.neighborhood || p.location?.district).filter(Boolean))];
 
+  // Voice-friendly price formatter (no dots/commas that confuse TTS)
+  const vPrice = (n) => {
+    if (!n) return "";
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)} million euros`;
+    if (n >= 1000) return `${Math.round(n / 100) * 100} euros`;
+    return `${n} euros`;
+  };
+
   // Short summary: count, price range, neighborhoods — let the AI model compose the natural response
   const summary = [];
   summary.push(`RESULTS: ${searchResult.total} properties found, showing top ${count}.`);
-  summary.push(`PRICE RANGE: ${minPrice.toLocaleString("es-ES")}€ – ${maxPrice.toLocaleString("es-ES")}€`);
+  summary.push(`PRICE RANGE: ${vPrice(minPrice)} to ${vPrice(maxPrice)}`);
   if (neighborhoods.length) summary.push(`AREAS: ${neighborhoods.slice(0, 3).join(", ")}`);
 
   // Brief per-property data (numbered for reference)
   props.forEach((p, i) => {
     const parts = [`#${i + 1}:`];
-    parts.push(`${p.price?.toLocaleString("es-ES")}€`);
+    parts.push(vPrice(p.price));
     if (p.operation === "rent") parts.push(s.monthly);
-    if (p.rooms) parts.push(`${p.rooms}BR`);
-    if (p.size) parts.push(`${p.size}m²`);
+    if (p.rooms) parts.push(`${p.rooms} bedrooms`);
+    if (p.size) parts.push(`${p.size} square meters`);
     if (p.location?.neighborhood) parts.push(p.location.neighborhood);
-    summary.push(parts.join(" "));
+    summary.push(parts.join(", "));
   });
 
   if (searchResult.total > 5) {
@@ -409,7 +417,8 @@ async function executeGetPropertyDetails(params, session) {
   // Concise structured data — let the AI model compose a natural spoken response
   const details = [];
   details.push(`PROPERTY: ${p.title || "—"}`);
-  details.push(`PRICE: ${p.price?.toLocaleString("es-ES")}€${p.operation === "rent" ? "/month" : ""}`);
+  const vp = p.price >= 1000000 ? `${(p.price/1000000).toFixed(1)} million euros` : p.price >= 1000 ? `${Math.round(p.price/100)*100} euros` : `${p.price} euros`;
+  details.push(`PRICE: ${vp}${p.operation === "rent" ? " per month" : ""}`);
   if (p.rooms) details.push(`ROOMS: ${p.rooms}`);
   if (p.bathrooms || p.features?.bathrooms) details.push(`BATHS: ${p.bathrooms || p.features?.bathrooms}`);
   if (p.size || p.features?.size_sqm) details.push(`SIZE: ${p.size || p.features?.size_sqm}m²`);
