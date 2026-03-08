@@ -296,6 +296,25 @@ function getStrings(lang) {
   return VOICE_STRINGS[lang] || VOICE_STRINGS.es;
 }
 
+// ── Shared search results store (for frontend polling) ──────
+// When VAPI webhook executes a search, results are stored here
+// Frontend polls /api/vapi/latest-search to get them
+const latestVoiceSearch = { ts: 0, filters: {}, properties: [], total: 0 };
+
+// ── GET /api/vapi/latest-search — polled by frontend ────────
+router.get("/latest-search", (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  if (latestVoiceSearch.ts > since) {
+    return res.json({
+      ts: latestVoiceSearch.ts,
+      filters: latestVoiceSearch.filters,
+      properties: latestVoiceSearch.properties,
+      total: latestVoiceSearch.total,
+    });
+  }
+  res.json({ ts: latestVoiceSearch.ts }); // no new results
+});
+
 // ── In-memory voice session (per call) ──────────────────────
 const voiceSessions = new Map();
 
@@ -323,6 +342,12 @@ async function executeSearchProperties(params, session) {
   session.lastFilters = filters;
   session.lastResults = searchResult.properties;
   session.searchCount++;
+
+  // Store for frontend polling — this is how voice search syncs to the listing
+  latestVoiceSearch.ts = Date.now();
+  latestVoiceSearch.filters = filters;
+  latestVoiceSearch.properties = searchResult.properties;
+  latestVoiceSearch.total = searchResult.total;
 
   if (searchResult.total === 0) return s.noResults;
 
