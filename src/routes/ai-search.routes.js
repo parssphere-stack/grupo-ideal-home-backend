@@ -2,7 +2,6 @@
  * AI Smart Search — Conversational property search with Claude tool use
  *
  * POST /api/ai/search — natural language property search
- * POST /api/ai/chat  — simple AI chat (property descriptions, etc.)
  * GET  /api/ai/search/stats — inventory stats
  *
  * Overhauled for Homes.com-level experience:
@@ -74,13 +73,24 @@ async function callAI(systemPrompt, messages, tools) {
   const prov = getProvider();
 
   if (prov === "anthropic") {
-    const response = await anthropicClient.messages.create({
-      model: "claude-sonnet-4-6-20250514",
-      max_tokens: 2048,
-      system: systemPrompt,
-      tools,
-      messages,
-    });
+    // Try preferred model, fall back to Haiku if unavailable
+    const models = ["claude-sonnet-4-6-20250514", "claude-haiku-4-5-20251001"];
+    let response;
+    for (const model of models) {
+      try {
+        response = await anthropicClient.messages.create({
+          model,
+          max_tokens: 2048,
+          system: systemPrompt,
+          tools,
+          messages,
+        });
+        break; // success
+      } catch (modelErr) {
+        console.warn(`[AI Search] Model ${model} failed:`, modelErr.message);
+        if (model === models[models.length - 1]) throw modelErr; // last model, propagate
+      }
+    }
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
     const text = response.content.find((b) => b.type === "text")?.text || "";
@@ -781,54 +791,7 @@ router.post("/search", limiter, async (req, res) => {
   }
 });
 
-// ── POST /api/ai/chat — Simple AI chat (descriptions, etc.) ─
-router.post("/chat", limiter, async (req, res) => {
-  try {
-    if (!getProvider()) {
-      return res.status(503).json({
-        error: "AI service not configured",
-      });
-    }
-
-    const { messages } = req.body;
-    if (!messages || !Array.isArray(messages) || !messages.length) {
-      return res.status(400).json({ error: "messages array required" });
-    }
-
-    const prov = getProvider();
-
-    if (prov === "anthropic") {
-      const response = await anthropicClient.messages.create({
-        model: "claude-sonnet-4-6-20250514",
-        max_tokens: 1024,
-        messages: messages.map((m) => ({
-          role: m.role || "user",
-          content: m.content,
-        })),
-      });
-      const text =
-        response.content.find((b) => b.type === "text")?.text || "";
-      return res.json({ reply: text });
-    }
-
-    if (prov === "openai") {
-      const response = await openaiClient.chat.completions.create({
-        model: "gpt-4o-mini",
-        max_tokens: 1024,
-        messages: messages.map((m) => ({
-          role: m.role || "user",
-          content: m.content,
-        })),
-      });
-      return res.json({
-        reply: response.choices[0]?.message?.content || "",
-      });
-    }
-  } catch (err) {
-    console.error("[AI Chat] Error:", err.message);
-    res.status(500).json({ error: "AI chat failed" });
-  }
-});
+// Note: /api/ai/chat is handled by ai-chat.routes.js
 
 // ── GET /api/ai/search/stats ────────────────────────────────
 router.get("/search/stats", async (req, res) => {
