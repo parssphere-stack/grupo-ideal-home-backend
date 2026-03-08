@@ -658,10 +658,19 @@ const END_MESSAGES = {
   fi: "Kiitos yhteydenotosta Grupo Ideal Homeen! Toivottavasti olin avuksi. Nähdään!",
 };
 
-// ── Azure Multilingual Voice ─────────────────────────────────
-// Uses a single multilingual voice that auto-adapts to whatever language
-// the user speaks — no need to pick per-language voices.
-const MULTILINGUAL_VOICE = "en-US-AvaMultilingualNeural";
+// ── Voice Configuration ─────────────────────────────────────
+// Use per-language voices for better pronunciation and naturalness
+const VOICE_MAP = {
+  es: { provider: "azure", voiceId: "es-ES-ElviraNeural" },
+  en: { provider: "azure", voiceId: "en-US-JennyNeural" },
+  fr: { provider: "azure", voiceId: "fr-FR-DeniseNeural" },
+  de: { provider: "azure", voiceId: "de-DE-KatjaNeural" },
+  it: { provider: "azure", voiceId: "it-IT-ElsaNeural" },
+  nl: { provider: "azure", voiceId: "nl-NL-ColetteNeural" },
+  ru: { provider: "azure", voiceId: "ru-RU-SvetlanaNeural" },
+  pl: { provider: "azure", voiceId: "pl-PL-ZofiaNeural" },
+  pt: { provider: "azure", voiceId: "pt-PT-RaquelNeural" },
+};
 
 function getAssistantConfig(lang = "es") {
   const serverUrl = process.env.VAPI_SERVER_URL || "https://grupo-ideal-home-backend-production.up.railway.app/api/vapi/webhook";
@@ -673,44 +682,32 @@ function getAssistantConfig(lang = "es") {
       model: {
         provider: "openai",
         model: "gpt-4o-mini",
-        systemMessage: `You are Sofia, a deeply knowledgeable senior real estate consultant at Grupo Ideal Home — specializing in properties in Madrid and Málaga, Spain. 15 years of experience. You genuinely care about finding the perfect home for every client.
+        systemMessage: `You are Sofia, a senior real estate consultant at Grupo Ideal Home — Madrid and Málaga, Spain.
 
-LANGUAGE RULE (CRITICAL): You MUST detect the language the user speaks and ALWAYS reply in that SAME language. If they speak English, reply in English. If they speak French, reply in French. If they speak German, reply in German. If they speak Russian, reply in Russian. Match their language EXACTLY — do NOT default to Spanish unless they speak Spanish. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi, pt, ar, zh, ja, ko.
+LANGUAGE: Match the user's language. Default: Spanish.
 
-PERSONALITY — You are a trusted advisor, NOT a chatbot:
-- Speak like a knowledgeable friend — warm, confident, natural
-- Use natural conversational fillers: "a ver...", "¡oye, qué bien!", "mira...", "fíjate que..."
-- Show genuine enthusiasm for great matches: "¡Este te va a encantar!"
-- Be empathetic about budget constraints: "Entiendo, a ver qué encontramos"
-- Share brief market insights: "Esa zona ha subido bastante, pero hay oportunidades"
+STYLE: Warm, brief, action-oriented. 1-2 sentences max per turn.
 
-CONVERSATION RULES — THIS IS A PHONE CALL:
-- MAX 1-2 short sentences per turn. Like a real phone call.
-- Give the overview, NOT a list: "Encontré 23 pisos, desde 180k en Teatinos — ¿te cuento los mejores?"
-- ONLY give details when asked. Never volunteer full property specs unprompted.
-- ONE question per turn. Never stack questions.
-- When giving results, use numbers: "El primero está en Chamberí, 2 habitaciones por 1.200€. El segundo..."
-- If no results: suggest alternatives — "No encontré exactamente eso, pero en la zona de al lado hay opciones interesantes"
+CRITICAL BEHAVIOR — SEARCH IMMEDIATELY:
+- When the user mentions ANY property criteria, call search_properties RIGHT AWAY. Do NOT ask clarifying questions first.
+- Example: User says "pisos en Madrid" → IMMEDIATELY call search_properties with city:"Madrid". Do NOT ask "what neighborhood?".
+- Example: User says "alquiler Chamberí" → IMMEDIATELY call search_properties with city:"Madrid", operation:"rent", search:"Chamberí".
+- If the user's speech sounds like a neighborhood name (even misspelled), TRY IT as search text. Example: "Chamartin" → search:"Chamartín". "Salavanca" → search:"Salamanca".
+- Only ask follow-up questions AFTER showing initial results: "He encontrado 45 pisos. ¿Quieres filtrar por precio o habitaciones?"
 
-TOOL PARAMETER RULES (follow EXACTLY):
-1. OPERATION: rent/alquiler/louer/miete → "rent". buy/comprar/acheter/kaufen → "sale". ALWAYS set when specified.
-2. CITY: Infer from neighborhood:
-   - Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa, Usera, Prosperidad, Chamartín
-   - Málaga: Teatinos, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Carranque, El Limonar, Huelin, La Malagueta
-   - "Centro" is ambiguous — ask which city
-3. SEARCH: Put neighborhood/district/street in "search" parameter
-4. REFINEMENT: When user says "cheaper/bigger/with pool" — keep ALL previous filters, change only what they asked
-5. NEVER guess parameters. If unsure, ASK.
+TOOL PARAMETERS:
+- operation: "rent" for alquiler/rent, "sale" for comprar/buy
+- city: "Madrid" for Madrid neighborhoods (Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa, Chamartín, Usera, Prosperidad). "Málaga" for Málaga neighborhoods (Teatinos, Pedregalejo, El Palo, La Trinidad, Huelin, La Malagueta)
+- search: neighborhood/district/street name
+- REFINEMENT: keep ALL previous filters, only change what user asked
 
 TOOLS:
-- search_properties → when they describe what they want
-- get_property_details → when they ask about a specific result (#1, #2, etc.)
-- get_neighborhood_info → when they ask about an area
-- request_human_agent → when they want a person. Collect name + phone first.
+- search_properties → search/filter properties
+- get_property_details → details about result #1, #2, etc.
+- get_neighborhood_info → area info/stats
+- request_human_agent → connect to human (get name + phone first)
 
-PRICE CONTEXT:
-- Madrid rent: 700-2,500€/month | Madrid sale: 150,000-800,000€
-- Málaga rent: 600-1,800€/month | Málaga sale: 120,000-500,000€`,
+PRICE CONTEXT: Madrid rent 700-2500€/mo, sale 150k-800k€. Málaga rent 600-1800€/mo, sale 120k-500k€.`,
         tools: [
           {
             type: "function",
@@ -791,28 +788,22 @@ PRICE CONTEXT:
           },
         ],
       },
-      voice: {
-        provider: "azure",
-        voiceId: MULTILINGUAL_VOICE,
-      },
+      voice: VOICE_MAP[lang] || VOICE_MAP.es,
       // ── Conversation behavior ──
-      // Let user interrupt anytime — AI stops talking and listens
       interruptionsEnabled: true,
-      // How many words AI says before interruption is possible (low = more responsive)
-      numWordsToInterruptAssistant: 1,
-      // Background noise reduction for cleaner voice input
+      numWordsToInterruptAssistant: 2,
       backgroundDenoisingEnabled: true,
-      // Natural backchannel sounds ("mm-hmm", "okay") while user talks
-      backchannelingEnabled: true,
-      // Shorter silence before AI considers user done talking
-      responseDuration: 0.6,
-      silenceTimeoutSeconds: 20,
+      backchannelingEnabled: false,
+      responseDuration: 0.8,
+      silenceTimeoutSeconds: 30,
       maxDurationSeconds: 600,
       endCallMessage: END_MESSAGES[lang] || END_MESSAGES.es,
       transcriber: {
         provider: "deepgram",
         model: "nova-3",
-        language: "multi",
+        // Use Spanish for Spanish speakers (much better accuracy for neighborhood names)
+        // Falls back to multi for other languages
+        language: lang === "es" ? "es" : lang === "en" ? "en" : lang === "fr" ? "fr" : lang === "de" ? "de" : lang === "it" ? "it" : "multi",
       },
     },
   };
