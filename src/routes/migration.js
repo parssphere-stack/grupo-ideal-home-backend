@@ -175,4 +175,66 @@ async function runMigration(datasetId) {
   console.log(`🎉 Done: ${totalUpdated} updated`);
 }
 
+// ══ Assign GIH codes to all properties that don't have one ══
+router.post("/assign-codes", async (req, res) => {
+  try {
+    const col = getCol();
+    const count = await col.countDocuments({ $or: [{ code: null }, { code: { $exists: false } }] });
+    if (count === 0) return res.json({ status: "done", message: "All properties already have codes", assigned: 0 });
+
+    res.json({ status: "started", message: `Assigning codes to ${count} properties. Check logs.` });
+    assignCodes().catch((e) => console.error("Assign codes failed:", e));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function assignCodes() {
+  const col = getCol();
+  const counterCol = mongoose.connection.collection("counters");
+
+  // Get current counter value
+  const current = await counterCol.findOne({ _id: "property_code" });
+  let seq = current?.seq || 0;
+
+  const batchSize = 500;
+  let assigned = 0;
+
+  while (true) {
+    const docs = await col
+      .find(
+        { $or: [{ code: null }, { code: { $exists: false } }] },
+        { projection: { _id: 1 } },
+      )
+      .sort({ createdAt: 1 })
+      .limit(batchSize)
+      .toArray();
+
+    if (!docs.length) break;
+
+    const bulkOps = docs.map((doc) => {
+      seq++;
+      return {
+        updateOne: {
+          filter: { _id: doc._id },
+          update: { $set: { code: String(10000 + seq) } },
+        },
+      };
+    });
+
+    await col.bulkWrite(bulkOps, { ordered: false });
+    assigned += docs.length;
+    console.log(`Assigned codes: ${assigned} so far (last: ${10000 + seq})`);
+  }
+
+  // Update counter to match
+  await counterCol.updateOne(
+    { _id: "property_code" },
+    { $set: { seq } },
+    { upsert: true },
+  );
+
+  console.log(`Done! Assigned ${assigned} codes. Counter set to ${seq} (last code: ${10000 + seq}).`);
+}
+
 module.exports = router;

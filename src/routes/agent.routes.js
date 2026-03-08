@@ -631,4 +631,77 @@ router.get("/browse-properties", auth, adminOnly, async (req, res) => {
   }
 });
 
+// ══ AGENT REQUESTS (from AI voice/chat) ═════════════════════
+
+const AgentRequest = require("../models/agent-request.model");
+
+// POST /api/agents/requests — create a new request (called by AI tools, no auth needed)
+router.post("/requests", async (req, res) => {
+  try {
+    const doc = await AgentRequest.create(req.body);
+    res.status(201).json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/agents/requests — list all requests (admin) or assigned (agent)
+router.get("/requests", auth, async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+    if (req.agent.role !== "admin") filter.assignedTo = req.agent.id;
+
+    const total = await AgentRequest.countDocuments(filter);
+    const requests = await AgentRequest.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((+page - 1) * +limit)
+      .limit(+limit)
+      .populate("assignedTo", "name email")
+      .lean();
+
+    res.json({ requests, total });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/agents/requests/:id — update request (assign, change status, add notes)
+router.put("/requests/:id", auth, async (req, res) => {
+  try {
+    const update = {};
+    const { status, assignedTo, notes } = req.body;
+    if (status) update.status = status;
+    if (notes !== undefined) update.notes = notes;
+    if (assignedTo) {
+      update.assignedTo = assignedTo;
+      update.assignedAt = new Date();
+      if (!status) update.status = "assigned";
+    }
+
+    const doc = await AgentRequest.findByIdAndUpdate(req.params.id, update, {
+      new: true,
+    }).populate("assignedTo", "name email");
+
+    if (!doc) return res.status(404).json({ error: "Not found" });
+    res.json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/agents/requests/stats — count by status
+router.get("/requests/stats", auth, adminOnly, async (req, res) => {
+  try {
+    const pipeline = [{ $group: { _id: "$status", count: { $sum: 1 } } }];
+    const result = await AgentRequest.aggregate(pipeline);
+    const stats = {};
+    result.forEach((r) => (stats[r._id] = r.count));
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

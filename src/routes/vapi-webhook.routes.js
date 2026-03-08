@@ -432,6 +432,28 @@ async function executeGetNeighborhoodInfo(params) {
   return lines.join(" | ");
 }
 
+async function executeRequestHumanAgent(params, session, callId) {
+  const AgentRequest = require("../models/agent-request.model");
+  try {
+    await AgentRequest.create({
+      customerName: params.customer_name || "",
+      customerPhone: params.customer_phone || "",
+      customerEmail: params.customer_email || "",
+      language: session.lang || "es",
+      summary: params.summary || "Customer requested to speak with an agent",
+      lookingFor: params.looking_for || "",
+      budget: params.budget || "",
+      preferredArea: params.preferred_area || "",
+      source: "voice",
+      callId: callId || null,
+    });
+    return "DONE: Request saved. A human agent will contact the customer soon.";
+  } catch (err) {
+    console.error("[VAPI] Request agent error:", err.message);
+    return "Request saved. An agent will contact you soon.";
+  }
+}
+
 // ── Detect language from VAPI call metadata ─────────────────
 function detectLangFromCall(message) {
   // VAPI may send language info in call metadata or assistant overrides
@@ -486,7 +508,9 @@ router.post("/webhook", async (req, res) => {
           } else if (toolName === "get_property_details") {
             result = await executeGetPropertyDetails(params, session);
           } else if (toolName === "get_neighborhood_info") {
-            result = await executeGetNeighborhoodInfo(params, session);
+            result = await executeGetNeighborhoodInfo(params);
+          } else if (toolName === "request_human_agent") {
+            result = await executeRequestHumanAgent(params, session, callId);
           } else {
             result = s.unknownTool;
           }
@@ -542,17 +566,17 @@ router.post("/webhook", async (req, res) => {
 // ── Assistant config — multilingual ─────────────────────────
 
 const FIRST_MESSAGES = {
-  es: "¡Hola! Soy Sofia, tu asesora inmobiliaria de Grupo Ideal Home. ¿En qué puedo ayudarte? Puedo buscar pisos en Madrid o Málaga, en venta o alquiler.",
-  en: "Hi! I'm Sofia, your real estate advisor at Grupo Ideal Home. How can I help you? I can search apartments in Madrid or Málaga, for sale or rent.",
-  fr: "Bonjour! Je suis Sofia, votre conseillère immobilière chez Grupo Ideal Home. Comment puis-je vous aider? Je peux chercher des appartements à Madrid ou Málaga.",
-  de: "Hallo! Ich bin Sofia, Ihre Immobilienberaterin bei Grupo Ideal Home. Wie kann ich Ihnen helfen? Ich kann Wohnungen in Madrid oder Málaga suchen.",
-  it: "Ciao! Sono Sofia, la tua consulente immobiliare di Grupo Ideal Home. Come posso aiutarti? Posso cercare appartamenti a Madrid o Málaga.",
-  nl: "Hallo! Ik ben Sofia, uw vastgoedadviseur bij Grupo Ideal Home. Hoe kan ik u helpen? Ik kan woningen zoeken in Madrid of Málaga.",
-  ru: "Привет! Я София, ваш консультант по недвижимости в Grupo Ideal Home. Чем могу помочь? Могу найти квартиры в Мадриде или Малаге.",
-  pl: "Cześć! Jestem Sofia, twoja doradczyni nieruchomości w Grupo Ideal Home. Jak mogę pomóc? Mogę szukać mieszkań w Madrycie lub Maladze.",
-  da: "Hej! Jeg er Sofia, din ejendomsrådgiver hos Grupo Ideal Home. Hvordan kan jeg hjælpe? Jeg kan søge lejligheder i Madrid eller Málaga.",
-  sv: "Hej! Jag är Sofia, din fastighetsrådgivare på Grupo Ideal Home. Hur kan jag hjälpa dig? Jag kan söka lägenheter i Madrid eller Málaga.",
-  fi: "Hei! Olen Sofia, kiinteistöneuvojasi Grupo Ideal Homessa. Miten voin auttaa? Voin etsiä asuntoja Madridista tai Málagasta.",
+  es: "¡Hola! Soy Sofia de Grupo Ideal Home. ¿Qué tipo de propiedad estás buscando?",
+  en: "Hi! I'm Sofia from Grupo Ideal Home. What kind of property are you looking for?",
+  fr: "Bonjour! Je suis Sofia de Grupo Ideal Home. Quel type de bien recherchez-vous?",
+  de: "Hallo! Ich bin Sofia von Grupo Ideal Home. Was für eine Immobilie suchen Sie?",
+  it: "Ciao! Sono Sofia di Grupo Ideal Home. Che tipo di immobile cerchi?",
+  nl: "Hallo! Ik ben Sofia van Grupo Ideal Home. Wat voor woning zoekt u?",
+  ru: "Привет! Я София из Grupo Ideal Home. Какую недвижимость вы ищете?",
+  pl: "Cześć! Jestem Sofia z Grupo Ideal Home. Jakiej nieruchomości szukasz?",
+  da: "Hej! Jeg er Sofia fra Grupo Ideal Home. Hvad slags bolig leder du efter?",
+  sv: "Hej! Jag är Sofia från Grupo Ideal Home. Vilken typ av bostad letar du efter?",
+  fi: "Hei! Olen Sofia Grupo Ideal Homesta. Millaista asuntoa etsit?",
 };
 
 const END_MESSAGES = {
@@ -592,26 +616,29 @@ function getAssistantConfig(lang = "es") {
       model: {
         provider: "openai",
         model: "gpt-4o-mini",
-        systemMessage: `You are Sofia, a friendly real estate advisor at Grupo Ideal Home. Properties are from PRIVATE SELLERS (no agencies) in Madrid and Málaga, Spain.
+        systemMessage: `You are Sofia, a senior real estate consultant at Grupo Ideal Home — a real estate agency specializing in properties in Madrid and Málaga, Spain. You have 15 years of experience in the Spanish property market.
 
-LANGUAGE: Match the user's language. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi. Default: Spanish.
+LANGUAGE: Detect and match the user's language. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi. Default: Spanish.
 
-STYLE — THIS IS A PHONE CALL, NOT A TEXT CHAT:
-- Talk like a real person. Use natural filler words occasionally ("well", "let me see", "great choice").
-- MAX 2 sentences per response. Be brief. Nobody wants a monologue on the phone.
-- After searching: say how many found, mention 1-2 highlights (cheapest, biggest, best location), then ask what interests them.
-- Do NOT list all 5 properties one by one — just give the overview. If they want details, they'll ask.
-- When giving property details, pick the 3 most interesting facts, not every field.
-- Ask ONE question at a time, never 2-3 at once.
-- Use conversational language: "I found some great options!" not "I have located 47 properties matching your criteria."
-- Sound enthusiastic about good finds. Be empathetic about budget constraints.
+PERSONALITY — You are warm, confident, and experienced:
+- Speak like a trusted friend who happens to be a real estate expert
+- Use natural conversational fillers: "a ver...", "¡oye, qué bien!", "mira...", "fíjate que..."
+- Show genuine enthusiasm when you find good matches
+- Be empathetic about budget or timing concerns
+- Share brief market insights when relevant: "that area has been going up lately"
 
-SEARCH BEHAVIOR:
-- When user describes what they want → call search_properties
-- When refining ("cheaper", "with terrace") → keep previous filters, change only what's requested
-- No results → suggest ONE specific change (raise budget by X, try nearby neighborhood)
-- Need info → ask naturally: "Are you looking to rent or buy?"
-- When user asks about a neighborhood/area → call get_neighborhood_info
+CONVERSATION RULES — THIS IS A PHONE CALL:
+- MAX 1-2 short sentences per turn. Like a real phone call.
+- Give the overview, NOT a list. "I found 23 apartments, prices start at 180k in Teatinos — want to hear the highlights?"
+- ONLY give details when the user asks. Never volunteer full property specs.
+- ONE question per turn. Never stack questions.
+- If user wants to talk to a human agent, collect their name and phone, then call request_human_agent
+
+TOOLS:
+- search_properties → when they describe what they want
+- get_property_details → when they ask about a specific result
+- get_neighborhood_info → when they ask about an area
+- request_human_agent → when they want to speak with a person. Collect name + phone first.
 
 NEIGHBORHOODS:
 Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa
@@ -621,26 +648,26 @@ Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Ca
             type: "function",
             function: {
               name: "search_properties",
-              description: "Search the property database. Call when the user describes what they're looking for or wants to refine a previous search.",
+              description: "Search properties. Call when user describes what they want or refines a previous search.",
               parameters: {
                 type: "object",
                 properties: {
-                  city: { type: "string", description: 'City: "Madrid" or "Málaga". Omit to search all.' },
-                  operation: { type: "string", enum: ["sale", "rent"], description: "'sale' for buying, 'rent' for renting." },
-                  type: { type: "string", enum: ["apartment", "house", "villa", "penthouse", "studio", "duplex"], description: "Property type." },
-                  min_price: { type: "number", description: "Minimum price in euros." },
-                  max_price: { type: "number", description: "Maximum price in euros." },
-                  min_rooms: { type: "integer", description: "Minimum bedrooms." },
-                  max_rooms: { type: "integer", description: "Maximum bedrooms." },
-                  min_size: { type: "number", description: "Minimum size in m²." },
-                  max_size: { type: "number", description: "Maximum size in m²." },
-                  has_elevator: { type: "boolean", description: "With elevator." },
-                  has_parking: { type: "boolean", description: "With parking." },
-                  has_terrace: { type: "boolean", description: "With terrace." },
-                  has_pool: { type: "boolean", description: "With pool." },
-                  is_exterior: { type: "boolean", description: "Exterior-facing." },
-                  search: { type: "string", description: "Free text: neighborhood, street, keywords." },
-                  sort: { type: "string", enum: ["price_asc", "price_desc", "newest", "size_desc"], description: "Sort order." },
+                  city: { type: "string", description: 'City: "Madrid" or "Málaga".' },
+                  operation: { type: "string", enum: ["sale", "rent"] },
+                  type: { type: "string", enum: ["apartment", "house", "villa", "penthouse", "studio", "duplex"] },
+                  min_price: { type: "number" },
+                  max_price: { type: "number" },
+                  min_rooms: { type: "integer" },
+                  max_rooms: { type: "integer" },
+                  min_size: { type: "number" },
+                  max_size: { type: "number" },
+                  has_elevator: { type: "boolean" },
+                  has_parking: { type: "boolean" },
+                  has_terrace: { type: "boolean" },
+                  has_pool: { type: "boolean" },
+                  is_exterior: { type: "boolean" },
+                  search: { type: "string", description: "Neighborhood, street, keywords." },
+                  sort: { type: "string", enum: ["price_asc", "price_desc", "newest", "size_desc"] },
                 },
               },
             },
@@ -649,12 +676,12 @@ Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Ca
             type: "function",
             function: {
               name: "get_property_details",
-              description: "Get details about a specific property. Call when user asks about a property ('tell me about the first one', 'more info on #3', 'how long has it been listed').",
+              description: "Get details about a specific property by number or ID.",
               parameters: {
                 type: "object",
                 properties: {
                   property_index: { type: "integer", description: "Property number from last search (1, 2, 3...)." },
-                  property_id: { type: "string", description: "Property ID or code." },
+                  property_id: { type: "string" },
                 },
               },
             },
@@ -663,14 +690,34 @@ Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Ca
             type: "function",
             function: {
               name: "get_neighborhood_info",
-              description: "Get neighborhood market stats — average prices, available properties, features. Call when user asks about an area ('How is Chamberí?', 'Is Salamanca expensive?').",
+              description: "Get neighborhood market stats. Call when user asks about an area.",
               parameters: {
                 type: "object",
                 properties: {
-                  neighborhood: { type: "string", description: "Neighborhood or district name." },
-                  city: { type: "string", description: 'Optional: "Madrid" or "Málaga".' },
+                  neighborhood: { type: "string" },
+                  city: { type: "string" },
                 },
                 required: ["neighborhood"],
+              },
+            },
+          },
+          {
+            type: "function",
+            function: {
+              name: "request_human_agent",
+              description: "Save a request for a human agent to contact the customer. Call ONLY when the customer explicitly wants to talk to a real person. Collect their name and phone number first.",
+              parameters: {
+                type: "object",
+                properties: {
+                  customer_name: { type: "string", description: "Customer's name." },
+                  customer_phone: { type: "string", description: "Customer's phone number." },
+                  customer_email: { type: "string", description: "Customer's email (optional)." },
+                  summary: { type: "string", description: "Brief summary of what the customer is looking for and discussed." },
+                  looking_for: { type: "string", description: "What type of property they want." },
+                  budget: { type: "string", description: "Their budget range." },
+                  preferred_area: { type: "string", description: "Preferred city/neighborhood." },
+                },
+                required: ["customer_name", "customer_phone", "summary"],
               },
             },
           },

@@ -179,7 +179,7 @@ When the user refines ("cheaper", "bigger", "with pool"), keep all previous filt
     contextBlock += `\nLAST RESULTS: ${session.lastResults.length} properties were shown. The user may reference them by number (e.g., "the first one", "#3", "that penthouse").`;
   }
 
-  return `You are Sofia, senior real estate consultant at Grupo Ideal Home — a platform for PRIVATE SELLER properties (no agencies) in Madrid and Málaga, Spain.
+  return `You are Sofia, senior real estate consultant at Grupo Ideal Home — a real estate agency specializing in properties in Madrid and Málaga, Spain. You have 15 years of experience.
 
 LANGUAGE: Respond ONLY in ${language}. Every word must be in ${language}. Property names and addresses stay in Spanish.
 

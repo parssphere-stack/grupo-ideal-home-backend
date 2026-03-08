@@ -42,7 +42,7 @@ function mapItem(item) {
   const ci = item.contactInfo || {};
 
   return {
-    idealista_id: String(item.propertyCode || item.adId || item.id),
+    idealista_id: String(item.propertyCode || item.adId || item.id).replace(/^idealista_/, ""),
     title:
       item.title ||
       item.suggestedTexts?.title ||
@@ -193,15 +193,9 @@ async function importDataset(datasetId, loc = null) {
     }
   }
 
-  // Deactivate agencies found in this scrape
-  if (agencyIds.length > 0) {
-    const agencyResult = await Property.updateMany(
-      { idealista_id: { $in: agencyIds }, status: "active" },
-      { $set: { status: "inactive", is_particular: false } },
-    );
-    if (agencyResult.modifiedCount > 0)
-      console.log(`  Agency listings deactivated: ${agencyResult.modifiedCount}`);
-  }
+  // Note: We no longer deactivate agencies during import.
+  // Agency detection is handled by Phase 1 of daily maintenance instead.
+  // This prevents accidental deactivation when re-importing old datasets.
 
   const result = {
     datasetId, total: items.length, particular: particular.length,

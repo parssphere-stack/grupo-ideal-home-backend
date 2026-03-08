@@ -135,30 +135,24 @@ async function detectMisclassifiedAgencies() {
 
 // ══════════════════════════════════════════════════════════════
 // Phase 1b: Stale Property Cleanup
-// Properties not re-scraped in 14+ days AND not validated in 14+ days → inactive
+// Properties not re-scraped in 60+ days → inactive
+// (Conservative: only removes truly abandoned listings)
 // ══════════════════════════════════════════════════════════════
 async function deactivateStaleProperties() {
   console.log("[Maintenance] Phase 1b: Stale property cleanup...");
 
-  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000); // 14 days ago
+  const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // 60 days ago
 
-  // Properties not updated (re-scraped) in 14+ days AND not validated in 14+ days
-  // updatedAt is the most reliable indicator — gets refreshed on any upsert
   const result = await Property.updateMany(
     {
       status: "active",
       updatedAt: { $lt: cutoff },
-      $or: [
-        { validated_at: { $exists: false } },
-        { validated_at: null },
-        { validated_at: { $lt: cutoff } },
-      ],
     },
     { $set: { status: "inactive" } },
   );
 
   const deactivated = result.modifiedCount || 0;
-  console.log(`[Maintenance] Phase 1b done: ${deactivated} stale properties deactivated`);
+  console.log(`[Maintenance] Phase 1b done: ${deactivated} stale properties deactivated (60+ days old)`);
   return { deactivated };
 }
 
@@ -308,8 +302,8 @@ async function validateActiveListings() {
         continue;
       }
 
-      // Safety cap: don't deactivate more than 30% of a city's listings at once
-      const maxDeactivate = Math.ceil(ourProperties.length * 0.3);
+      // Safety cap: don't deactivate more than 10% of a city's listings at once
+      const maxDeactivate = Math.ceil(ourProperties.length * 0.1);
       const toDeactivate = missing.length > maxDeactivate ? missing.slice(0, maxDeactivate) : missing;
 
       if (missing.length > maxDeactivate) {

@@ -1,7 +1,15 @@
 const mongoose = require("mongoose");
 
+// Counter schema for auto-incrementing property codes
+const counterSchema = new mongoose.Schema({
+  _id: { type: String, required: true },
+  seq: { type: Number, default: 0 },
+});
+const Counter = mongoose.model("Counter", counterSchema);
+
 const propertySchema = new mongoose.Schema(
   {
+    code: { type: String, unique: true, sparse: true },
     idealista_id: { type: String, unique: true, required: true },
     title: String,
     description: String,
@@ -100,5 +108,18 @@ propertySchema.index(
     name: "property_text_index",
   },
 );
+
+// Auto-generate numeric code before saving (10001, 10002, ...)
+propertySchema.pre("save", async function (next) {
+  if (!this.code) {
+    const counter = await Counter.findByIdAndUpdate(
+      "property_code",
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true },
+    );
+    this.code = String(10000 + counter.seq);
+  }
+  next();
+});
 
 module.exports = mongoose.model("Property", propertySchema);

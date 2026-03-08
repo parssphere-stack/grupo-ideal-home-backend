@@ -161,6 +161,7 @@ router.get("/:id/analysis", async (req, res) => {
       $or: [
         { _id: mongoose.isValidObjectId(req.params.id) ? req.params.id : null },
         { idealista_id: req.params.id },
+        { code: req.params.id.toUpperCase() },
       ],
     }).lean();
 
@@ -348,6 +349,7 @@ router.get("/:id", async (req, res) => {
       $or: [
         { _id: mongoose.isValidObjectId(req.params.id) ? req.params.id : null },
         { idealista_id: req.params.id },
+        { code: req.params.id.toUpperCase() },
       ],
     }).lean();
 
