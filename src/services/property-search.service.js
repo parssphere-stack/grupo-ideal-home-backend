@@ -94,6 +94,7 @@ async function searchProperties(params) {
   if (isTruthy(q.has_terrace)) filter["features.has_terrace"] = true;
   if (isTruthy(q.has_pool)) filter["features.has_pool"] = true;
   if (isTruthy(q.is_exterior)) filter["features.is_exterior"] = true;
+  if (isTruthy(q.has_ac)) filter["features.has_ac"] = true;
 
   // Exclude already-assigned properties
   if (q.excludeAssigned === "1") {
@@ -186,6 +187,7 @@ async function searchProperties(params) {
     hasParking: p.features?.has_parking,
     hasTerrace: p.features?.has_terrace,
     hasPool: p.features?.has_pool,
+    hasAC: p.features?.has_ac,
     exterior: p.features?.is_exterior,
     images: p.images || [],
     url: p.url,

@@ -712,13 +712,23 @@ router.post("/search", limiter, async (req, res) => {
       if (aiResult.toolCall) {
         const { id, name, input } = aiResult.toolCall;
 
-        // Execute the tool
-        const toolResult = await executeTool(
-          name,
-          input,
-          session,
-          currentUser
-        );
+        // Execute the tool (with error handling)
+        let toolResult;
+        try {
+          toolResult = await executeTool(
+            name,
+            input,
+            session,
+            currentUser
+          );
+        } catch (toolErr) {
+          console.error(`[AI Search] Tool ${name} error:`, toolErr.message);
+          toolResult = {
+            properties: [],
+            total: 0,
+            data: JSON.stringify({ error: `Tool execution failed: ${toolErr.message}` }),
+          };
+        }
 
         if (name === "search_properties") {
           filtersApplied = input || {};
@@ -764,12 +774,16 @@ router.post("/search", limiter, async (req, res) => {
       break;
     }
 
+    // If loop exhausted without getting a text reply, generate a fallback summary
+    if (!replyText && properties.length > 0) {
+      replyText = `I found ${total} properties matching your criteria.`;
+    } else if (!replyText) {
+      replyText = "I wasn't able to complete the search. Could you rephrase your request?";
+    }
+
     // Save full conversation to session (including tool blocks)
     session.messages = currentMessages;
-    // Only add final text reply if it's a string (not already added as rawContent)
-    if (replyText) {
-      session.messages.push({ role: "assistant", content: replyText });
-    }
+    session.messages.push({ role: "assistant", content: replyText });
     if (Object.keys(filtersApplied).length)
       session.searchCount = (session.searchCount || 0) + 1;
     trimHistory(session);
