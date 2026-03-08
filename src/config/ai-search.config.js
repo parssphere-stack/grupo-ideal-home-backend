@@ -1,11 +1,18 @@
 /**
- * AI Smart Search — Tool definition + system prompt
+ * AI Smart Search — Tool definitions + system prompt
+ *
+ * Tools: search_properties, get_property_details
+ * System prompt: conversational, context-aware, with session memory
  */
 
+// ── Tool: search_properties ─────────────────────────────────
 const SEARCH_TOOL = {
   name: "search_properties",
-  description:
-    "Search the Grupo Ideal Home property database. Call this whenever the user describes what they are looking for. Returns matching properties with price, location, size, rooms, features, and images.",
+  description: `Search the Grupo Ideal Home property database. Call this when:
+- User describes what they want (city, budget, rooms, features)
+- User refines a previous search ("cheaper", "with parking", "in another area")
+- User asks to sort results ("sort by price", "cheapest first")
+When REFINING, include ALL previous filters plus the changes. Do NOT drop filters the user set before unless they explicitly ask to remove them.`,
   input_schema: {
     type: "object",
     properties: {
@@ -89,33 +96,87 @@ const SEARCH_TOOL = {
       sort: {
         type: "string",
         enum: ["price_asc", "price_desc", "newest", "size_desc"],
-        description: "Sort order. Default: newest.",
+        description:
+          "Sort order. Use price_asc for 'cheapest first', price_desc for 'most expensive first', newest for 'most recent', size_desc for 'largest first'. Default: newest.",
       },
     },
     required: [],
   },
 };
 
+// ── Tool: get_property_details ──────────────────────────────
+const GET_PROPERTY_DETAILS_TOOL = {
+  name: "get_property_details",
+  description: `Get detailed information about a specific property. Call this when:
+- User asks about a specific property ("tell me about the first one", "more info on #3")
+- User asks property-specific questions ("how long has it been on the market?", "what floor is it on?")
+- User references a property by index number from the last search results
+Use property_index (1-based) to reference properties from the last search.`,
+  input_schema: {
+    type: "object",
+    properties: {
+      property_index: {
+        type: "integer",
+        description:
+          "1-based index of the property in the last search results. E.g., 1 for first, 2 for second.",
+      },
+      property_id: {
+        type: "string",
+        description:
+          "Property ID or code. Use this if the user specifies a code directly.",
+      },
+    },
+    required: [],
+  },
+};
+
+// ── All tools ───────────────────────────────────────────────
+const TOOLS = [SEARCH_TOOL, GET_PROPERTY_DETAILS_TOOL];
+
 /**
  * Build the system prompt for the AI search agent.
- * @param {string} language - Detected language name (e.g. "Spanish", "English")
+ * @param {string} language - Detected language name
  * @param {Object} stats - Live inventory stats
+ * @param {Object} session - Current session (for context)
  */
-function getSearchSystemPrompt(language, stats) {
+function getSearchSystemPrompt(language, stats, session) {
+  let contextBlock = "";
+
+  // If there are previous filters, tell Claude about them
+  if (session?.lastFilters && Object.keys(session.lastFilters).length > 0) {
+    contextBlock = `\nLAST SEARCH CONTEXT: The user's previous search used these filters: ${JSON.stringify(session.lastFilters)}
+When the user refines ("cheaper", "bigger", "with pool"), keep all previous filters and only change what they asked to change.`;
+  }
+
+  // If there are last results, mention them
+  if (session?.lastResults?.length > 0) {
+    contextBlock += `\nLAST RESULTS: ${session.lastResults.length} properties were shown. The user may reference them by number (e.g., "the first one", "#3", "that penthouse").`;
+  }
+
   return `You are Sofia, senior real estate consultant at Grupo Ideal Home — a platform for PRIVATE SELLER properties (no agencies) in Madrid and Málaga, Spain.
 
 LANGUAGE: Respond ONLY in ${language}. Every word must be in ${language}. Property names and addresses stay in Spanish.
 
 INVENTORY: ${stats.total} properties | Madrid: ${stats.madrid} | Málaga: ${stats.malaga} | Rent: ${stats.rent} | Sale: ${stats.sale} | Price: ${stats.minPrice}–${stats.maxPrice}€
-
+${contextBlock}
 BEHAVIOR:
 - When the user describes what they want, ALWAYS call search_properties with the right filters
-- When refining ("cheaper", "with parking", "different area"), remember previous criteria and adjust only what changed
-- Give a brief natural-language summary of results (2-4 sentences): how many found, price range, neighborhoods represented
+- When refining ("cheaper", "with parking", "different area"), remember ALL previous criteria and adjust ONLY what changed — do NOT drop previous filters
+- When the user asks about a specific property ("the first one", "tell me about #3", "how long has it been listed?"), call get_property_details with the property_index
+- When sorting ("sort by price", "cheapest first"), call search_properties with the same filters + sort parameter
+- Give a brief, warm summary of results (2-4 sentences): how many found, price range, neighborhoods
+- Refer to properties by number (#1, #2, etc.) so the user can easily reference them
 - If no results match, suggest broadening: remove a filter, increase budget, try another area
-- If you need more info to search effectively, ask 1-2 clarifying questions (city? budget? buy or rent?)
-- Be warm and professional, like a trusted advisor
-- When recommending neighborhoods, briefly explain why they fit
+- If you need more info, ask 1-2 clarifying questions (city? budget? buy or rent?)
+- Be warm, professional, and concise — like a trusted advisor, not a chatbot
+
+CONVERSATIONAL GUIDELINES:
+- Greetings → Respond warmly and ask what they're looking for
+- Vague requests → Ask 1-2 key questions (city, budget, buy/rent)
+- Specific requests → Search immediately
+- Follow-ups → Refine without losing context
+- Property questions → Get details and answer specifically
+- Off-topic → Gently redirect to property search
 
 NEIGHBORHOODS:
 Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa, Usera, Prosperidad, Chamartín
@@ -130,8 +191,6 @@ PRICE CONTEXT:
 
 /**
  * Detect language from message text.
- * @param {string} text
- * @returns {string} Language name
  */
 function detectLanguage(text) {
   const t = (text || "").toLowerCase();
@@ -145,8 +204,7 @@ function detectLanguage(text) {
   if (/\b(квартир|комнат|ищу|аренд|купить)\b/.test(t)) return "Russian";
   if (/\b(квартир|кімнат|шукаю|оренд|купити)\b/.test(t)) return "Ukrainian";
 
-  // Default to Spanish
   return "Spanish";
 }
 
-module.exports = { SEARCH_TOOL, getSearchSystemPrompt, detectLanguage };
+module.exports = { TOOLS, SEARCH_TOOL, getSearchSystemPrompt, detectLanguage };

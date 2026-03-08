@@ -1,18 +1,22 @@
 /**
- * AI Smart Search
+ * AI Smart Search — Conversational property search with Claude tool use
  *
- * POST /api/ai/search — natural language property search with Claude tool use
+ * POST /api/ai/search — natural language property search
+ *
+ * Features:
+ * - Full conversation history with tool_use/tool_result blocks (enables follow-ups)
+ * - Multiple tools: search, get details, sort, paginate
+ * - Session with last-search context for refinements
  */
 
 const express = require("express");
 const router = express.Router();
-const Anthropic = require("@anthropic-ai/sdk");
 const rateLimit = require("express-rate-limit");
 const { v4: uuidv4 } = require("uuid");
 const { searchProperties } = require("../services/property-search.service");
 const Property = require("../models/property.model");
 const {
-  SEARCH_TOOL,
+  TOOLS,
   getSearchSystemPrompt,
   detectLanguage,
 } = require("../config/ai-search.config");
@@ -24,39 +28,211 @@ const limiter = rateLimit({
   message: { error: "Too many requests, please slow down" },
 });
 
-// ── Anthropic client (singleton) ────────────────────────────
-let client = null;
-function getClient() {
-  if (!client && process.env.ANTHROPIC_API_KEY) {
-    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// ── AI Provider (Anthropic preferred, OpenAI fallback) ──────
+let provider = null; // "anthropic" | "openai"
+let anthropicClient = null;
+let openaiClient = null;
+
+function getProvider() {
+  if (provider) return provider;
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    const Anthropic = require("@anthropic-ai/sdk");
+    anthropicClient = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    provider = "anthropic";
+  } else if (process.env.OPENAI_API_KEY) {
+    const OpenAI = require("openai");
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    provider = "openai";
   }
-  return client;
+
+  return provider;
 }
 
-// ── In-memory session store ─────────────────────────────────
-const sessions = new Map();
-const SESSION_TTL = 30 * 60 * 1000; // 30 minutes
-const MAX_HISTORY = 20; // 10 pairs
+// ── Convert tools to OpenAI function format ─────────────────
+function toolsToOpenAI(tools) {
+  return tools.map((t) => ({
+    type: "function",
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.input_schema,
+    },
+  }));
+}
 
-function getSession(sessionId) {
-  if (sessionId && sessions.has(sessionId)) {
-    const session = sessions.get(sessionId);
+// ── Unified AI call: returns { toolCall, text, rawContent } ─
+async function callAI(systemPrompt, messages, tools) {
+  const prov = getProvider();
+
+  if (prov === "anthropic") {
+    const response = await anthropicClient.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
+      system: systemPrompt,
+      tools,
+      messages,
+    });
+
+    const toolUse = response.content.find((b) => b.type === "tool_use");
+    const text = response.content.find((b) => b.type === "text")?.text || "";
+
+    return {
+      toolCall: toolUse ? { id: toolUse.id, name: toolUse.name, input: toolUse.input } : null,
+      text,
+      rawContent: response.content, // needed for history
+      stopReason: response.stop_reason,
+    };
+  }
+
+  if (prov === "openai") {
+    // Convert Anthropic-style messages to OpenAI format
+    const oaiMessages = [{ role: "system", content: systemPrompt }];
+
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        if (Array.isArray(msg.content) && msg.content[0]?.type === "tool_result") {
+          // Tool result → OpenAI tool message
+          const tr = msg.content[0];
+          oaiMessages.push({
+            role: "tool",
+            tool_call_id: tr.tool_use_id,
+            content: typeof tr.content === "string" ? tr.content : JSON.stringify(tr.content),
+          });
+        } else {
+          oaiMessages.push({ role: "user", content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) });
+        }
+      } else if (msg.role === "assistant") {
+        if (Array.isArray(msg.content)) {
+          // Assistant with tool_use blocks
+          const textPart = msg.content.find((b) => b.type === "text")?.text || "";
+          const toolUse = msg.content.find((b) => b.type === "tool_use");
+          const oaiMsg = { role: "assistant", content: textPart || null };
+          if (toolUse) {
+            oaiMsg.tool_calls = [{
+              id: toolUse.id,
+              type: "function",
+              function: { name: toolUse.name, arguments: JSON.stringify(toolUse.input) },
+            }];
+          }
+          oaiMessages.push(oaiMsg);
+        } else {
+          oaiMessages.push({ role: "assistant", content: msg.content });
+        }
+      }
+    }
+
+    const response = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 1500,
+      messages: oaiMessages,
+      tools: toolsToOpenAI(tools),
+    });
+
+    const choice = response.choices[0];
+    const oaiToolCall = choice.message.tool_calls?.[0];
+
+    if (oaiToolCall) {
+      // Convert OpenAI tool call to our unified format + Anthropic-style rawContent
+      const input = JSON.parse(oaiToolCall.function.arguments || "{}");
+      return {
+        toolCall: { id: oaiToolCall.id, name: oaiToolCall.function.name, input },
+        text: choice.message.content || "",
+        rawContent: [
+          ...(choice.message.content ? [{ type: "text", text: choice.message.content }] : []),
+          { type: "tool_use", id: oaiToolCall.id, name: oaiToolCall.function.name, input },
+        ],
+        stopReason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+      };
+    }
+
+    return {
+      toolCall: null,
+      text: choice.message.content || "",
+      rawContent: choice.message.content || "",
+      stopReason: "end_turn",
+    };
+  }
+
+  throw new Error("No AI provider configured");
+}
+
+// ── Session store (in-memory cache + MongoDB persistence) ───
+const SearchSession = require("../models/search-session.model");
+const memCache = new Map(); // fast in-memory cache
+const MAX_HISTORY = 40;
+
+async function getSession(sessionId) {
+  // 1. Check memory cache first
+  if (sessionId && memCache.has(sessionId)) {
+    const session = memCache.get(sessionId);
     session.lastAccess = Date.now();
     return { id: sessionId, session };
   }
+
+  // 2. Check MongoDB for existing session
+  if (sessionId) {
+    const dbSession = await SearchSession.findOne({ session_id: sessionId }).lean();
+    if (dbSession) {
+      const session = {
+        messages: dbSession.messages || [],
+        lastAccess: Date.now(),
+        lastFilters: dbSession.lastFilters || {},
+        lastResults: [],  // not persisted (too large), will be re-populated on next search
+        preferences: dbSession.preferences || {},
+        language: dbSession.language,
+        searchCount: dbSession.searchCount || 0,
+        _persisted: true,
+      };
+      memCache.set(sessionId, session);
+      return { id: sessionId, session };
+    }
+  }
+
+  // 3. Create new session
   const id = sessionId || uuidv4();
-  const session = { messages: [], lastAccess: Date.now() };
-  sessions.set(id, session);
+  const session = {
+    messages: [],
+    lastAccess: Date.now(),
+    lastFilters: {},
+    lastResults: [],
+    preferences: {},
+    language: null,
+    searchCount: 0,
+    _persisted: false,
+  };
+  memCache.set(id, session);
   return { id, session };
 }
 
-// Cleanup expired sessions every 5 minutes
+// Persist session to MongoDB (non-blocking, fire-and-forget)
+function persistSession(sessionId, session, language) {
+  const update = {
+    messages: session.messages,
+    lastFilters: session.lastFilters,
+    lastResultIds: (session.lastResults || []).map((p) => p._id).filter(Boolean),
+    preferences: session.preferences,
+    language: language || session.language,
+    messageCount: session.messages.length,
+    searchCount: session.searchCount || 0,
+    lastAccess: new Date(),
+  };
+
+  SearchSession.updateOne(
+    { session_id: sessionId },
+    { $set: update },
+    { upsert: true }
+  ).catch((err) => console.error("[AI Search] Session persist error:", err.message));
+}
+
+// Cleanup memory cache every 10 minutes (MongoDB TTL handles DB cleanup)
 setInterval(() => {
   const now = Date.now();
-  for (const [id, s] of sessions) {
-    if (now - s.lastAccess > SESSION_TTL) sessions.delete(id);
+  const TTL = 30 * 60 * 1000;
+  for (const [id, s] of memCache) {
+    if (now - s.lastAccess > TTL) memCache.delete(id);
   }
-}, 5 * 60 * 1000);
+}, 10 * 60 * 1000);
 
 // ── Inventory stats cache ───────────────────────────────────
 let statsCache = null;
@@ -115,17 +291,134 @@ async function getInventoryStats() {
   return statsCache;
 }
 
-// ── Helper: format number ───────────────────────────────────
-function fmt(n) {
-  return (n || 0).toLocaleString("es-ES");
+// ── Tool executors ──────────────────────────────────────────
+
+async function executeTool(toolName, toolInput, session) {
+  switch (toolName) {
+    case "search_properties": {
+      // Merge with last filters if this looks like a refinement
+      const filters = { ...toolInput };
+
+      const searchResult = await searchProperties({
+        ...filters,
+        limit: 8,
+        page: 1,
+      });
+
+      // Save to session for follow-ups
+      session.lastFilters = filters;
+      session.lastResults = searchResult.properties;
+
+      return {
+        properties: searchResult.properties,
+        total: searchResult.total,
+        data: JSON.stringify({
+          total: searchResult.total,
+          showing: searchResult.properties.length,
+          properties: searchResult.properties.map((p, i) => ({
+            index: i + 1,
+            id: p._id,
+            code: p.code,
+            title: p.title,
+            price: p.price,
+            operation: p.operation,
+            type: p.type,
+            rooms: p.rooms,
+            bathrooms: p.bathrooms,
+            size: p.size,
+            floor: p.floor,
+            city: p.location?.city,
+            neighborhood: p.location?.neighborhood,
+            district: p.location?.district,
+            hasPool: p.hasPool || false,
+            hasParking: p.hasParking || false,
+            hasTerrace: p.hasTerrace || false,
+            hasLift: p.hasLift || false,
+            hasAC: p.hasAC || false,
+            exterior: p.exterior || false,
+            images: (p.images || []).length,
+            createdAt: p.createdAt,
+          })),
+        }),
+      };
+    }
+
+    case "get_property_details": {
+      // Find property by index in last results or by ID/code
+      let property = null;
+      const { property_index, property_id } = toolInput;
+
+      if (property_index && session.lastResults?.length) {
+        property = session.lastResults[property_index - 1];
+      } else if (property_id) {
+        const doc = await Property.findOne({
+          $or: [
+            { _id: property_id },
+            { code: property_id },
+            { idealista_id: property_id },
+          ],
+          status: "active",
+        }).lean();
+        if (doc) {
+          property = doc;
+        }
+      }
+
+      if (!property) {
+        return {
+          properties: [],
+          total: 0,
+          data: JSON.stringify({ error: "Property not found" }),
+        };
+      }
+
+      // Calculate days on market
+      const daysOnMarket = property.scraped_at
+        ? Math.floor((Date.now() - new Date(property.scraped_at).getTime()) / 86400000)
+        : null;
+
+      return {
+        properties: [property],
+        total: 1,
+        data: JSON.stringify({
+          id: property._id,
+          code: property.code,
+          title: property.title,
+          description: property.description || "",
+          price: property.price,
+          pricePerSqm: property.priceByArea || property.price_per_sqm,
+          operation: property.operation,
+          type: property.type,
+          rooms: property.rooms || property.features?.bedrooms,
+          bathrooms: property.bathrooms || property.features?.bathrooms,
+          size: property.size || property.features?.size_sqm,
+          floor: property.floor || property.features?.floor,
+          city: property.location?.city,
+          district: property.location?.district,
+          neighborhood: property.location?.neighborhood,
+          address: property.location?.address,
+          hasPool: property.hasPool || property.features?.has_pool || false,
+          hasParking: property.hasParking || property.features?.has_parking || false,
+          hasTerrace: property.hasTerrace || property.features?.has_terrace || false,
+          hasLift: property.hasLift || property.features?.has_elevator || false,
+          exterior: property.exterior || property.features?.is_exterior || false,
+          images: (property.images || []).length,
+          daysOnMarket,
+          contact: property.contact ? { name: property.contact.name } : null,
+        }),
+      };
+    }
+
+    default:
+      return { properties: [], total: 0, data: JSON.stringify({ error: "Unknown tool" }) };
+  }
 }
 
 // ── POST /api/ai/search ─────────────────────────────────────
 router.post("/search", limiter, async (req, res) => {
   try {
-    const anthropic = getClient();
-    if (!anthropic) {
-      return res.status(503).json({ error: "AI service not configured" });
+    if (!getProvider()) {
+      return res.status(503).json({ error: "AI service not configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY" });
     }
 
     const { message, session_id, language } = req.body;
@@ -135,8 +428,8 @@ router.post("/search", limiter, async (req, res) => {
 
     const userMessage = String(message).trim();
 
-    // Session
-    const { id: sessionId, session } = getSession(session_id);
+    // Session (async — may load from MongoDB)
+    const { id: sessionId, session } = await getSession(session_id);
 
     // Language detection
     const lang = language
@@ -146,120 +439,80 @@ router.post("/search", limiter, async (req, res) => {
     // Inventory stats for system prompt
     const stats = await getInventoryStats();
 
+    // System prompt (includes last search context if available)
+    const systemPrompt = getSearchSystemPrompt(lang, stats, session);
+
     // Add user message to history
     session.messages.push({ role: "user", content: userMessage });
 
-    // Trim history
-    if (session.messages.length > MAX_HISTORY) {
-      session.messages = session.messages.slice(-MAX_HISTORY);
-    }
+    // Trim history (keep recent, but preserve tool blocks integrity)
+    trimHistory(session);
 
-    // System prompt
-    const systemPrompt = getSearchSystemPrompt(lang, stats);
-
-    // ── Call Claude with tool use ───────────────────────────
-    let response;
-    try {
-      response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
-        system: systemPrompt,
-        tools: [SEARCH_TOOL],
-        messages: session.messages,
-      });
-    } catch (aiErr) {
-      console.error("[AI Search] Claude error:", aiErr.message);
-      // Fallback: basic text search
-      return fallbackSearch(userMessage, sessionId, res);
-    }
-
-    // ── Handle tool use ─────────────────────────────────────
+    // ── Agentic tool loop ───────────────────────────────────
+    // AI may call multiple tools in sequence before giving a final answer
     let properties = [];
     let total = 0;
     let filtersApplied = {};
     let replyText = "";
+    let loopCount = 0;
+    const MAX_LOOPS = 3;
 
-    const toolUseBlock = response.content.find((b) => b.type === "tool_use");
+    let currentMessages = [...session.messages];
 
-    if (toolUseBlock && toolUseBlock.name === "search_properties") {
-      filtersApplied = toolUseBlock.input || {};
+    while (loopCount < MAX_LOOPS) {
+      loopCount++;
 
-      // Execute search
-      const searchResult = await searchProperties({
-        ...filtersApplied,
-        limit: 6,
-        page: 1,
-      });
-      properties = searchResult.properties;
-      total = searchResult.total;
-
-      // Build tool result summary for Claude
-      const toolResultContent = JSON.stringify({
-        total,
-        showing: properties.length,
-        properties: properties.map((p) => ({
-          title: p.title,
-          price: p.price,
-          operation: p.operation,
-          type: p.propertyType,
-          rooms: p.rooms,
-          size: p.size,
-          city: p.address?.city,
-          neighborhood: p.address?.neighborhood,
-          district: p.address?.district,
-          hasPool: p.hasPool || false,
-          hasParking: p.hasParking || false,
-          hasTerrace: p.hasTerrace || false,
-          hasLift: p.hasLift || false,
-          exterior: p.exterior || false,
-        })),
-      });
-
-      // Send tool result back to Claude for natural language summary
+      let aiResult;
       try {
-        const followUp = await anthropic.messages.create({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 1024,
-          system: systemPrompt,
-          tools: [SEARCH_TOOL],
-          messages: [
-            ...session.messages,
-            { role: "assistant", content: response.content },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "tool_result",
-                  tool_use_id: toolUseBlock.id,
-                  content: toolResultContent,
-                },
-              ],
-            },
-          ],
+        aiResult = await callAI(systemPrompt, currentMessages, TOOLS);
+      } catch (aiErr) {
+        console.error(`[AI Search] ${provider} error:`, aiErr.message);
+        return fallbackSearch(userMessage, sessionId, res);
+      }
+
+      if (aiResult.toolCall) {
+        const { id, name, input } = aiResult.toolCall;
+
+        // Execute the tool
+        const toolResult = await executeTool(name, input, session);
+
+        if (name === "search_properties") {
+          filtersApplied = input || {};
+          properties = toolResult.properties;
+          total = toolResult.total !== undefined ? toolResult.total : 0;
+        } else if (name === "get_property_details" && toolResult.properties.length) {
+          properties = toolResult.properties;
+          total = 1;
+        }
+
+        // Store full tool_use + tool_result in conversation (KEY for context)
+        currentMessages.push({ role: "assistant", content: aiResult.rawContent });
+        currentMessages.push({
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: id, content: toolResult.data }],
         });
 
-        replyText =
-          followUp.content.find((b) => b.type === "text")?.text || "";
-      } catch (followUpErr) {
-        console.error("[AI Search] Follow-up error:", followUpErr.message);
-        // Use a generic reply with the data we have
-        replyText =
-          total > 0
-            ? `Found ${total} properties matching your criteria.`
-            : "No properties found matching those criteria. Try broadening your search.";
+        if (aiResult.stopReason === "end_turn") {
+          replyText = aiResult.text;
+          break;
+        }
+
+        continue;
       }
-    } else {
-      // No tool call — Claude is asking clarifying questions or chatting
-      replyText = response.content.find((b) => b.type === "text")?.text || "";
+
+      // No tool call — final text response
+      replyText = aiResult.text;
+      break;
     }
 
-    // Store assistant reply in session
+    // Save full conversation to session
+    session.messages = currentMessages;
     session.messages.push({ role: "assistant", content: replyText });
+    if (Object.keys(filtersApplied).length) session.searchCount = (session.searchCount || 0) + 1;
+    trimHistory(session);
 
-    // Trim again
-    if (session.messages.length > MAX_HISTORY) {
-      session.messages = session.messages.slice(-MAX_HISTORY);
-    }
+    // Persist to MongoDB (non-blocking)
+    persistSession(sessionId, session, lang);
 
     res.json({
       reply: replyText,
@@ -267,6 +520,7 @@ router.post("/search", limiter, async (req, res) => {
       total,
       filters_applied: filtersApplied,
       session_id: sessionId,
+      provider,
     });
   } catch (err) {
     console.error("[AI Search] Error:", err.message);
@@ -274,12 +528,31 @@ router.post("/search", limiter, async (req, res) => {
   }
 });
 
+// ── Trim history keeping tool block pairs intact ────────────
+function trimHistory(session) {
+  if (session.messages.length <= MAX_HISTORY) return;
+  // Find a safe cut point — don't split in the middle of a tool_use/tool_result pair
+  let cutIndex = session.messages.length - MAX_HISTORY;
+  // Make sure we don't start on a tool_result (orphan)
+  while (cutIndex < session.messages.length) {
+    const msg = session.messages[cutIndex];
+    if (msg.role === "user" && Array.isArray(msg.content) && msg.content[0]?.type === "tool_result") {
+      cutIndex++;
+    } else if (msg.role === "assistant" && Array.isArray(msg.content) && msg.content.some((b) => b.type === "tool_use")) {
+      cutIndex++; // don't start on an assistant tool_use without its result
+    } else {
+      break;
+    }
+  }
+  session.messages = session.messages.slice(cutIndex);
+}
+
 // ── Fallback: basic keyword search ──────────────────────────
 async function fallbackSearch(message, sessionId, res) {
   try {
     const result = await searchProperties({
       search: message,
-      limit: 6,
+      limit: 8,
       page: 1,
     });
 
