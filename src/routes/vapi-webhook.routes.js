@@ -326,30 +326,37 @@ async function executeSearchProperties(params, session) {
 
   if (searchResult.total === 0) return s.noResults;
 
-  const count = Math.min(5, searchResult.properties.length);
-  const lines = [`${s.found(searchResult.total)}. ${s.showing(count)}:\n`];
+  const props = searchResult.properties;
+  const count = props.length;
 
-  searchResult.properties.forEach((p, i) => {
-    const parts = [];
-    parts.push(s.number(i + 1));
-    if (p.title) parts.push(p.title);
+  // Build concise voice-friendly summary (NOT a full listing)
+  const prices = props.map((p) => p.price).filter(Boolean);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const neighborhoods = [...new Set(props.map((p) => p.location?.neighborhood || p.location?.district).filter(Boolean))];
+
+  // Short summary: count, price range, neighborhoods — let the AI model compose the natural response
+  const summary = [];
+  summary.push(`RESULTS: ${searchResult.total} properties found, showing top ${count}.`);
+  summary.push(`PRICE RANGE: ${minPrice.toLocaleString("es-ES")}€ – ${maxPrice.toLocaleString("es-ES")}€`);
+  if (neighborhoods.length) summary.push(`AREAS: ${neighborhoods.slice(0, 3).join(", ")}`);
+
+  // Brief per-property data (numbered for reference)
+  props.forEach((p, i) => {
+    const parts = [`#${i + 1}:`];
     parts.push(`${p.price?.toLocaleString("es-ES")}€`);
     if (p.operation === "rent") parts.push(s.monthly);
-    if (p.rooms) parts.push(s.rooms(p.rooms));
-    if (p.size) parts.push(s.sqm(p.size));
-    if (p.location?.neighborhood) parts.push(`${s.in} ${p.location.neighborhood}`);
-    else if (p.location?.district) parts.push(`${s.in} ${p.location.district}`);
-    if (p.hasPool) parts.push(s.withPool);
-    if (p.hasTerrace) parts.push(s.withTerrace);
-    if (p.hasParking) parts.push(s.withParking);
-    lines.push(parts.join(", ") + ".");
+    if (p.rooms) parts.push(`${p.rooms}BR`);
+    if (p.size) parts.push(`${p.size}m²`);
+    if (p.location?.neighborhood) parts.push(p.location.neighborhood);
+    summary.push(parts.join(" "));
   });
 
   if (searchResult.total > 5) {
-    lines.push(`\n${s.moreAvail(searchResult.total - 5)}`);
+    summary.push(`(${searchResult.total - 5} more available)`);
   }
 
-  return lines.join("\n");
+  return summary.join("\n");
 }
 
 async function executeGetPropertyDetails(params, session) {
@@ -369,36 +376,30 @@ async function executeGetPropertyDetails(params, session) {
 
   if (!property) return s.notFound;
 
-  const daysOnMarket = property.scraped_at
-    ? Math.floor((Date.now() - new Date(property.scraped_at).getTime()) / 86400000)
+  const p = property;
+  const daysOnMarket = p.scraped_at
+    ? Math.floor((Date.now() - new Date(p.scraped_at).getTime()) / 86400000)
     : null;
 
-  const p = property;
+  // Concise structured data — let the AI model compose a natural spoken response
   const details = [];
-  details.push(p.title || "—");
-  details.push(`${s.price}: ${p.price?.toLocaleString("es-ES")}€${p.operation === "rent" ? ` ${s.monthly}` : ""}`);
-  if (p.size || p.features?.size_sqm) details.push(`${s.size}: ${p.size || p.features?.size_sqm} m²`);
-  if (p.rooms || p.features?.bedrooms) details.push(`${p.rooms || p.features?.bedrooms} ${s.bedrooms}`);
-  if (p.bathrooms || p.features?.bathrooms) details.push(`${p.bathrooms || p.features?.bathrooms} ${s.bathrooms}`);
-  if (p.floor || p.features?.floor) details.push(`${s.floor} ${p.floor || p.features?.floor}`);
-  if (p.location?.neighborhood) details.push(`${s.neighborhood}: ${p.location.neighborhood}`);
-  if (p.location?.district) details.push(`${s.district}: ${p.location.district}`);
-  if (p.location?.city) details.push(`${s.city}: ${p.location.city}`);
+  details.push(`PROPERTY: ${p.title || "—"}`);
+  details.push(`PRICE: ${p.price?.toLocaleString("es-ES")}€${p.operation === "rent" ? "/month" : ""}`);
+  if (p.rooms) details.push(`ROOMS: ${p.rooms}`);
+  if (p.bathrooms || p.features?.bathrooms) details.push(`BATHS: ${p.bathrooms || p.features?.bathrooms}`);
+  if (p.size || p.features?.size_sqm) details.push(`SIZE: ${p.size || p.features?.size_sqm}m²`);
+  if (p.location?.neighborhood) details.push(`AREA: ${p.location.neighborhood}`);
+  else if (p.location?.city) details.push(`CITY: ${p.location.city}`);
 
   const feats = [];
-  if (p.hasPool || p.features?.has_pool) feats.push(s.withPool);
-  if (p.hasTerrace || p.features?.has_terrace) feats.push(s.withTerrace);
-  if (p.hasParking || p.features?.has_parking) feats.push(s.withParking);
-  if (p.hasLift || p.features?.has_elevator) feats.push(s.withLift);
-  if (p.exterior || p.features?.is_exterior) feats.push(s.exterior);
-  if (feats.length) details.push(`${s.features}: ${feats.join(", ")}`);
+  if (p.hasPool || p.features?.has_pool) feats.push("pool");
+  if (p.hasTerrace || p.features?.has_terrace) feats.push("terrace");
+  if (p.hasParking || p.features?.has_parking) feats.push("parking");
+  if (p.hasLift || p.features?.has_elevator) feats.push("elevator");
+  if (feats.length) details.push(`FEATURES: ${feats.join(", ")}`);
+  if (daysOnMarket !== null) details.push(`LISTED: ${daysOnMarket} days ago`);
 
-  if (p.price_per_sqm || p.priceByArea) {
-    details.push(`${s.pricePerSqm}: ${(p.price_per_sqm || p.priceByArea)?.toLocaleString("es-ES")}€`);
-  }
-  if (daysOnMarket !== null) details.push(s.daysOnMarket(daysOnMarket));
-
-  return details.join(". ") + ".";
+  return details.join(" | ");
 }
 
 // ── Detect language from VAPI call metadata ─────────────────
@@ -536,6 +537,21 @@ const END_MESSAGES = {
   fi: "Kiitos yhteydenotosta Grupo Ideal Homeen! Toivottavasti olin avuksi. Nähdään!",
 };
 
+// ── Language-specific Azure voices for natural TTS ──────────
+const AZURE_VOICES = {
+  es: "es-ES-ElviraNeural",
+  en: "en-US-JennyNeural",
+  fr: "fr-FR-DeniseNeural",
+  de: "de-DE-KatjaNeural",
+  it: "it-IT-ElsaNeural",
+  nl: "nl-NL-ColetteNeural",
+  ru: "ru-RU-SvetlanaNeural",
+  pl: "pl-PL-ZofiaNeural",
+  da: "da-DK-ChristelNeural",
+  sv: "sv-SE-SofieNeural",
+  fi: "fi-FI-NooraNeural",
+};
+
 function getAssistantConfig(lang = "es") {
   return {
     assistant: {
@@ -544,29 +560,29 @@ function getAssistantConfig(lang = "es") {
       model: {
         provider: "openai",
         model: "gpt-4o-mini",
-        systemMessage: `You are Sofia, senior real estate consultant at Grupo Ideal Home — a platform for PRIVATE SELLER properties (no agencies) in Madrid and Málaga, Spain.
+        systemMessage: `You are Sofia, a friendly real estate advisor at Grupo Ideal Home. Properties are from PRIVATE SELLERS (no agencies) in Madrid and Málaga, Spain.
 
-CRITICAL LANGUAGE RULE: Detect the language the user speaks and ALWAYS respond in that SAME language. Supported languages: Spanish, English, French, German, Italian, Dutch, Russian, Polish, Danish, Swedish, Finnish. Default to Spanish if unsure.
+LANGUAGE: Match the user's language. Supported: es, en, fr, de, it, nl, ru, pl, da, sv, fi. Default: Spanish.
 
-BEHAVIOR:
-- When the user describes what they want, ALWAYS call search_properties with the correct filters
-- When refining ("cheaper", "with parking", "another area"), remember previous criteria and only change what was requested
-- Summarize results briefly and naturally — how many found, price range, neighborhoods
-- If no results, suggest broadening: remove a filter, increase budget, try another area
-- If you need more info, ask 1-2 questions (city? budget? buy or rent?)
-- Be warm, professional, and concise
-- Refer to properties by number (#1, #2) so the user can ask about them
-- Keep voice responses SHORT — max 3-4 sentences per turn, this is a phone call not a text chat
+STYLE — THIS IS A PHONE CALL, NOT A TEXT CHAT:
+- Talk like a real person. Use natural filler words occasionally ("well", "let me see", "great choice").
+- MAX 2 sentences per response. Be brief. Nobody wants a monologue on the phone.
+- After searching: say how many found, mention 1-2 highlights (cheapest, biggest, best location), then ask what interests them.
+- Do NOT list all 5 properties one by one — just give the overview. If they want details, they'll ask.
+- When giving property details, pick the 3 most interesting facts, not every field.
+- Ask ONE question at a time, never 2-3 at once.
+- Use conversational language: "I found some great options!" not "I have located 47 properties matching your criteria."
+- Sound enthusiastic about good finds. Be empathetic about budget constraints.
+
+SEARCH BEHAVIOR:
+- When user describes what they want → call search_properties
+- When refining ("cheaper", "with terrace") → keep previous filters, change only what's requested
+- No results → suggest ONE specific change (raise budget by X, try nearby neighborhood)
+- Need info → ask naturally: "Are you looking to rent or buy?"
 
 NEIGHBORHOODS:
 Madrid: Chamberí, Salamanca, Retiro, Malasaña, Chueca, Lavapiés, Centro, Tetuán, Hortaleza, Vallecas, Arganzuela, Carabanchel, La Latina, Moncloa
-Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Carranque, El Limonar, Huelin
-
-PRICE CONTEXT:
-- Madrid rent: 700-2,500€/month
-- Madrid sale: 150,000-800,000€
-- Málaga rent: 600-1,800€/month
-- Málaga sale: 120,000-500,000€`,
+Málaga: Teatinos, Centro, Pedregalejo, El Palo, La Trinidad, Ciudad Jardín, Carranque, El Limonar, Huelin`,
         tools: [
           {
             type: "function",
@@ -613,12 +629,28 @@ PRICE CONTEXT:
         ],
       },
       voice: {
-        provider: "11labs",
-        voiceId: "aura-luna-es",
+        provider: "azure",
+        voiceId: AZURE_VOICES[lang] || AZURE_VOICES.es,
       },
-      silenceTimeoutSeconds: 30,
+      // ── Conversation behavior ──
+      // Let user interrupt anytime — AI stops talking and listens
+      interruptionsEnabled: true,
+      // How many words AI says before interruption is possible (low = more responsive)
+      numWordsToInterruptAssistant: 1,
+      // Background noise reduction for cleaner voice input
+      backgroundDenoisingEnabled: true,
+      // Natural backchannel sounds ("mm-hmm", "okay") while user talks
+      backchannelingEnabled: true,
+      // Shorter silence before AI considers user done talking
+      responseDuration: 0.6,
+      silenceTimeoutSeconds: 20,
       maxDurationSeconds: 600,
       endCallMessage: END_MESSAGES[lang] || END_MESSAGES.es,
+      transcriber: {
+        provider: "deepgram",
+        model: "nova-3",
+        language: "multi",
+      },
     },
   };
 }
