@@ -349,10 +349,12 @@ async function getInventoryStats() {
 
 // ── Tool executors ──────────────────────────────────────────
 
-async function executeTool(toolName, toolInput, session, currentUser) {
+async function executeTool(toolName, toolInput, session, currentUser, extraParams) {
   switch (toolName) {
     case "search_properties": {
       const filters = { ...toolInput };
+      // If a polygon was drawn on the map, include it in the search
+      if (extraParams?.polygon) filters.polygon = extraParams.polygon;
 
       const searchResult = await searchProperties({
         ...filters,
@@ -573,41 +575,108 @@ async function executeTool(toolName, toolInput, session, currentUser) {
     }
 
     case "request_agent": {
-      if (!currentUser) {
+      const { property_id, property_index, reason, conversation_summary, customer_name, customer_phone, customer_email } = toolInput;
+      const AgentRequest = require("../models/agent-request.model");
+
+      // Determine customer info from logged-in user or tool params
+      const name = currentUser?.name || customer_name || "";
+      const phone = currentUser?.phone || customer_phone || "";
+      const email = currentUser?.email || customer_email || "";
+
+      // If no contact info at all, ask for it
+      if (!name && !phone && !email && !currentUser) {
         return {
           properties: [],
           total: 0,
           data: JSON.stringify({
             error:
-              "User not logged in. Ask them to create an account first so an agent can contact them.",
+              "No contact info available. Ask the user for their name and phone number so an agent can call them back.",
           }),
         };
       }
 
-      const { property_id, reason, conversation_summary } = toolInput;
+      // Look up the property from session results or DB
+      let interestedProperty = {};
+      const Property = require("../models/property.model");
+      try {
+        let prop = null;
+        // Try by property_index from last search results
+        if (property_index && session?.lastResults?.length) {
+          prop = session.lastResults[property_index - 1];
+        }
+        // Try by property_id
+        if (!prop && property_id) {
+          prop = await Property.findById(property_id).lean();
+        }
+        if (prop) {
+          interestedProperty = {
+            propertyId: prop._id,
+            title: prop.title || `${prop.type || "Property"} in ${prop.location?.neighborhood || prop.location?.city || ""}`,
+            price: prop.price,
+            operation: prop.operation || "",
+            rooms: prop.rooms || null,
+            size: prop.size || null,
+            neighborhood: prop.location?.neighborhood || prop.location?.district || "",
+            city: prop.location?.city || "",
+            imageUrl: prop.images?.[0] || "",
+          };
+        }
+      } catch (err) {
+        console.error("[AI Search] Property lookup error:", err.message);
+      }
 
-      // Create inbox conversation as agent request
-      const convo = new InboxConversation({
-        user: currentUser._id,
-        property: property_id || undefined,
-        subject: `Agent Request: ${reason}`,
-        messages: [
-          {
-            sender: "system",
-            text: `🤖 AI Agent Request\n\nUser: ${currentUser.name} (${currentUser.email}${currentUser.phone ? `, ${currentUser.phone}` : ""})\nReason: ${reason}\n\nConversation summary:\n${conversation_summary}`,
-          },
-        ],
-      });
+      // Build budget string from session filters
+      const filters = session?.lastFilters || {};
+      let budgetStr = "";
+      if (filters.min_price || filters.max_price) {
+        budgetStr = [filters.min_price && `${filters.min_price.toLocaleString("es-ES")}€`, filters.max_price && `${filters.max_price.toLocaleString("es-ES")}€`].filter(Boolean).join(" – ");
+      }
 
-      await convo.save();
+      // Create AgentRequest for admin dashboard
+      try {
+        await AgentRequest.create({
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: email,
+          language: session?.language || "es",
+          summary: conversation_summary || reason,
+          lookingFor: reason,
+          budget: budgetStr,
+          preferredArea: filters.city || filters.search || "",
+          source: "chat",
+          sessionId: null,
+          interestedProperty,
+        });
+      } catch (err) {
+        console.error("[AI Search] AgentRequest create error:", err.message);
+      }
+
+      // Also create inbox conversation if user is logged in
+      if (currentUser) {
+        try {
+          const convo = new InboxConversation({
+            user: currentUser._id,
+            property: property_id || undefined,
+            subject: `Agent Request: ${reason}`,
+            messages: [
+              {
+                sender: "system",
+                text: `🤖 AI Agent Request\n\nUser: ${name} (${email}${phone ? `, ${phone}` : ""})\nReason: ${reason}\n\nConversation summary:\n${conversation_summary}`,
+              },
+            ],
+          });
+          await convo.save();
+        } catch (err) {
+          console.error("[AI Search] InboxConversation create error:", err.message);
+        }
+      }
 
       return {
         properties: [],
         total: 0,
         data: JSON.stringify({
           success: true,
-          request_id: convo._id,
-          message: `Agent request created for ${currentUser.name}. An agent will contact them at ${currentUser.email}.`,
+          message: `Agent request created for ${name || "customer"}. An agent will contact them soon.`,
         }),
       };
     }
@@ -631,7 +700,7 @@ router.post("/search", limiter, async (req, res) => {
       });
     }
 
-    const { message, session_id, language } = req.body;
+    const { message, session_id, language, polygon } = req.body;
     if (!message || !String(message).trim()) {
       return res.status(400).json({ error: "message required" });
     }
@@ -719,7 +788,8 @@ router.post("/search", limiter, async (req, res) => {
             name,
             input,
             session,
-            currentUser
+            currentUser,
+            { polygon }
           );
         } catch (toolErr) {
           console.error(`[AI Search] Tool ${name} error:`, toolErr.message);

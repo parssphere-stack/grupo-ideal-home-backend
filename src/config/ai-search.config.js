@@ -173,11 +173,13 @@ This gives an overview of what's available in a specific area.`,
 const REQUEST_AGENT_TOOL = {
   name: "request_agent",
   description: `Request a human agent to contact the user about a property or for personalized help. Call this when:
+- User shows interest in a specific property ("me gusta esta casa", "I like this one", "tell me more about #2", "quiero más información")
 - User asks to speak with a real person / agent ("quiero hablar con un agente", "connect me with someone")
 - User wants to schedule a visit or make an offer
+- User asks about availability, viewing times, or next steps for a specific property
 - User needs help that goes beyond what you can provide
 IMPORTANT: If the user is logged in, their contact info is already available — do NOT ask for name/email/phone. Just call this tool directly.
-If the user is NOT logged in, ask them to create an account first so the agent can reach them.`,
+If the user is NOT logged in, ask for their name and phone number so an agent can reach them, then call this tool.`,
   input_schema: {
     type: "object",
     properties: {
@@ -186,15 +188,35 @@ If the user is NOT logged in, ask them to create an account first so the agent c
         description:
           "ID of the property the user is interested in (from last search results or details).",
       },
+      property_index: {
+        type: "integer",
+        description:
+          "1-based index of the property from last search results that the user is interested in. E.g., 1 for first result, 2 for second. Include this so the agent knows which property the customer liked.",
+      },
       reason: {
         type: "string",
         description:
-          "Brief summary of what the user wants: visit, offer, more info, etc.",
+          "Brief summary of what the user wants: visit, offer, more info, interested in property, etc.",
       },
       conversation_summary: {
         type: "string",
         description:
           "2-3 sentence summary of the conversation so far — what the user searched for and what they're interested in.",
+      },
+      customer_name: {
+        type: "string",
+        description:
+          "Customer's name (only needed if user is NOT logged in).",
+      },
+      customer_phone: {
+        type: "string",
+        description:
+          "Customer's phone number (only needed if user is NOT logged in).",
+      },
+      customer_email: {
+        type: "string",
+        description:
+          "Customer's email (optional, only if user is NOT logged in).",
       },
     },
     required: ["reason", "conversation_summary"],
@@ -288,10 +310,11 @@ NEIGHBORHOOD:
 - Present insights conversationally: avg prices, what's available, notable features
 - Compare to other areas if helpful
 
-AGENT REQUESTS:
+AGENT REQUESTS — PROACTIVE:
+- When user shows INTEREST in a specific property ("me gusta", "I like this one", "quiero más información", "tell me more", "is this available?", "can I visit?") → ALWAYS call request_agent. Tell the user: "¡Genial! Un agente de nuestro equipo se pondrá en contacto contigo pronto para darte más detalles." (adapt to their language)
 - When user wants to talk to a person, visit, or make an offer → call request_agent
 - If LOGGED IN (see USER_INFO): call request_agent immediately — do NOT ask for contact info
-- If NOT logged in: politely ask them to create an account first
+- If NOT logged in: ask ONLY for name and phone number ("Para que un agente te contacte, ¿me das tu nombre y teléfono?"), then call request_agent with those details. Do NOT require account creation.
 
 NO RESULTS:
 - Never just say "no results found" — always suggest alternatives:

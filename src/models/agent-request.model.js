@@ -48,6 +48,19 @@ const agentRequestSchema = new mongoose.Schema(
       default: "new",
     },
 
+    // Property the customer is interested in
+    interestedProperty: {
+      propertyId: { type: mongoose.Schema.Types.ObjectId, ref: "Property", default: null },
+      title: { type: String, default: "" },
+      price: { type: Number, default: null },
+      operation: { type: String, default: "" },
+      rooms: { type: Number, default: null },
+      size: { type: Number, default: null },
+      neighborhood: { type: String, default: "" },
+      city: { type: String, default: "" },
+      imageUrl: { type: String, default: "" },
+    },
+
     // Agent notes
     notes: { type: String, default: "" },
   },

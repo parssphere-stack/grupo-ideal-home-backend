@@ -479,6 +479,26 @@ async function executeRequestHumanAgent(params, session, callId) {
     return "ERROR: You must collect the customer's name and phone number before calling this tool. Please ask for their name and phone, then call request_human_agent again with customer_name and customer_phone filled in.";
   }
 
+  // Look up interested property from voice session
+  let interestedProperty = {};
+  const propIndex = parseInt(params.property_index || params.propertyIndex);
+  if (session.lastResults?.length && propIndex >= 1) {
+    const prop = session.lastResults[propIndex - 1];
+    if (prop) {
+      interestedProperty = {
+        propertyId: prop._id,
+        title: prop.title || `${prop.type || "Property"} in ${prop.location?.neighborhood || prop.location?.city || ""}`,
+        price: prop.price,
+        operation: prop.operation || "",
+        rooms: prop.rooms || null,
+        size: prop.size || null,
+        neighborhood: prop.location?.neighborhood || prop.location?.district || "",
+        city: prop.location?.city || "",
+        imageUrl: prop.images?.[0] || "",
+      };
+    }
+  }
+
   try {
     await AgentRequest.create({
       customerName: name,
@@ -491,6 +511,7 @@ async function executeRequestHumanAgent(params, session, callId) {
       preferredArea: params.preferred_area || params.preferredArea || "",
       source: "voice",
       callId: callId || null,
+      interestedProperty,
     });
     console.log("[VAPI] AgentRequest created for:", name, phone);
     return "DONE: Request saved. A human agent will contact the customer soon.";
@@ -796,10 +817,11 @@ PRICE CONTEXT: Madrid rent 700-2500€/mo, sale 150k-800k€. Málaga rent 600-1
                   customer_name: { type: "string", description: "Customer's name." },
                   customer_phone: { type: "string", description: "Customer's phone number." },
                   customer_email: { type: "string", description: "Customer's email (optional)." },
-                  summary: { type: "string", description: "Brief summary of what the customer is looking for and discussed." },
+                  summary: { type: "string", description: "Brief summary of what the customer is looking for and what was discussed." },
                   looking_for: { type: "string", description: "What type of property they want." },
                   budget: { type: "string", description: "Their budget range." },
                   preferred_area: { type: "string", description: "Preferred city/neighborhood." },
+                  property_index: { type: "integer", description: "Property number from last search that the customer is interested in (1, 2, 3...). Include this if the customer liked a specific property." },
                 },
                 required: ["customer_name", "customer_phone", "summary"],
               },
