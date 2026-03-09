@@ -409,6 +409,9 @@ async function executeGetPropertyDetails(params, session) {
 
   if (!property) return s.notFound;
 
+  // Track last detailed property for agent request fallback
+  session.lastDetailedProp = property;
+
   const p = property;
   const daysOnMarket = p.scraped_at
     ? Math.floor((Date.now() - new Date(p.scraped_at).getTime()) / 86400000)
@@ -481,22 +484,34 @@ async function executeRequestHumanAgent(params, session, callId) {
 
   // Look up interested property from voice session
   let interestedProperty = {};
+  let prop = null;
   const propIndex = parseInt(params.property_index || params.propertyIndex);
+
+  // 1. Try by explicit property_index
   if (session.lastResults?.length && propIndex >= 1) {
-    const prop = session.lastResults[propIndex - 1];
-    if (prop) {
-      interestedProperty = {
-        propertyId: prop._id,
-        title: prop.title || `${prop.type || "Property"} in ${prop.location?.neighborhood || prop.location?.city || ""}`,
-        price: prop.price,
-        operation: prop.operation || "",
-        rooms: prop.rooms || null,
-        size: prop.size || null,
-        neighborhood: prop.location?.neighborhood || prop.location?.district || "",
-        city: prop.location?.city || "",
-        imageUrl: prop.images?.[0] || "",
-      };
-    }
+    prop = session.lastResults[propIndex - 1];
+  }
+  // 2. Fallback: if user viewed property details, use that
+  if (!prop && session.lastDetailedProp) {
+    prop = session.lastDetailedProp;
+  }
+  // 3. Fallback: if only 1 result in last search, use it
+  if (!prop && session.lastResults?.length === 1) {
+    prop = session.lastResults[0];
+  }
+
+  if (prop) {
+    interestedProperty = {
+      propertyId: prop._id,
+      title: prop.title || `${prop.type || "Property"} in ${prop.location?.neighborhood || prop.location?.city || ""}`,
+      price: prop.price,
+      operation: prop.operation || "",
+      rooms: prop.rooms || null,
+      size: prop.size || null,
+      neighborhood: prop.location?.neighborhood || prop.location?.district || "",
+      city: prop.location?.city || "",
+      imageUrl: prop.images?.[0] || "",
+    };
   }
 
   try {
