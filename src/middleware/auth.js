@@ -20,7 +20,7 @@ function userAuth(req, res, next) {
 
 function signUserToken(user) {
   return jwt.sign(
-    { id: user._id, name: user.name, email: user.email },
+    { id: user._id, name: user.name, email: user.email, phone: user.phone || "" },
     JWT_SECRET,
     { expiresIn: "30d" },
   );

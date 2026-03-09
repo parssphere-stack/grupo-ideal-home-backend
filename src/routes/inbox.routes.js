@@ -42,9 +42,22 @@ function agentAuth(req, res, next) {
 // ── List conversations ───────────────────────────────────────
 router.get("/", auth, async (req, res) => {
   try {
-    const convos = await InboxConversation.find({ user: req.user.id })
+    // Find conversations by user ID, or by matching email/phone
+    const orFilters = [{ user: req.user.id }];
+    if (req.user.email) orFilters.push({ customerEmail: req.user.email });
+    if (req.user.phone) orFilters.push({ customerPhone: req.user.phone });
+
+    const convos = await InboxConversation.find({ $or: orFilters })
       .populate("property", "title price location images")
       .sort({ updatedAt: -1 });
+
+    // Auto-link orphaned conversations to this user
+    for (const c of convos) {
+      if (!c.user) {
+        c.user = req.user.id;
+        await c.save();
+      }
+    }
 
     const result = convos.map((c) => {
       const last = c.messages[c.messages.length - 1];
@@ -75,9 +88,13 @@ router.get("/:id", auth, async (req, res) => {
   // Skip admin routes
   if (req.params.id === "admin") return res.status(404).json({ error: "Not found" });
   try {
+    const orFilters = [{ user: req.user.id }];
+    if (req.user.email) orFilters.push({ customerEmail: req.user.email });
+    if (req.user.phone) orFilters.push({ customerPhone: req.user.phone });
+
     const convo = await InboxConversation.findOne({
       _id: req.params.id,
-      user: req.user.id,
+      $or: orFilters,
     }).populate("property", "title price location images");
 
     if (!convo) return res.status(404).json({ error: "Not found" });
@@ -270,6 +287,7 @@ router.patch("/admin/:id/read", agentAuth, async (req, res) => {
 
 // ── Create conversation from AgentRequest (admin) ───────────
 const AgentRequest = require("../models/agent-request.model");
+const User = require("../models/user.model");
 
 router.post("/admin/create-from-request", agentAuth, async (req, res) => {
   try {
@@ -285,12 +303,21 @@ router.post("/admin/create-from-request", agentAuth, async (req, res) => {
       if (existing) return res.json(existing);
     }
 
+    // Try to find a registered user by email or phone
+    let matchedUser = null;
+    if (agentReq.customerEmail) {
+      matchedUser = await User.findOne({ email: agentReq.customerEmail.toLowerCase() });
+    }
+    if (!matchedUser && agentReq.customerPhone) {
+      matchedUser = await User.findOne({ phone: agentReq.customerPhone });
+    }
+
     // Build subject from request info
     const subject = agentReq.lookingFor || agentReq.summary || "Solicitud de cliente";
 
-    // Create conversation (with or without a registered user)
+    // Create conversation (linked to user if found)
     const convo = new InboxConversation({
-      user: null,
+      user: matchedUser?._id || null,
       customerName: agentReq.customerName || "",
       customerPhone: agentReq.customerPhone || "",
       customerEmail: agentReq.customerEmail || "",

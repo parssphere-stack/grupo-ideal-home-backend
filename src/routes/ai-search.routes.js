@@ -652,37 +652,48 @@ async function executeTool(toolName, toolInput, session, currentUser, extraParam
         console.error("[AI Search] AgentRequest create error:", err.message);
       }
 
-      // Create inbox conversation for two-way messaging (if user is logged in)
-      if (currentUser) {
-        try {
-          // Build a friendly first message
-          const propTitle = interestedProperty.title || reason;
-          const systemMsg = conversation_summary
-            ? `${conversation_summary}`
-            : `Solicitud: ${reason}`;
+      // Create inbox conversation for two-way messaging
+      // Try to find user: logged-in user, or match by email/phone
+      let convoUser = currentUser;
+      if (!convoUser && email) {
+        const User = require("../models/user.model");
+        convoUser = await User.findOne({ email: email.toLowerCase() }).lean();
+      }
+      if (!convoUser && phone) {
+        const User = require("../models/user.model");
+        convoUser = await User.findOne({ phone }).lean();
+      }
 
-          const convo = new InboxConversation({
-            user: currentUser._id,
-            property: interestedProperty.propertyId || undefined,
-            agentRequest: agentReqDoc?._id || undefined,
-            subject: propTitle,
-            messages: [
-              {
-                sender: "system",
-                text: systemMsg,
-              },
-            ],
-          });
-          await convo.save();
+      try {
+        const propTitle = interestedProperty.title || reason;
+        const systemMsg = conversation_summary
+          ? `${conversation_summary}`
+          : `Solicitud: ${reason}`;
 
-          // Link back: AgentRequest → InboxConversation
-          if (agentReqDoc) {
-            agentReqDoc.inboxConversation = convo._id;
-            await agentReqDoc.save();
-          }
-        } catch (err) {
-          console.error("[AI Search] InboxConversation create error:", err.message);
+        const convo = new InboxConversation({
+          user: convoUser?._id || null,
+          customerName: name,
+          customerPhone: phone,
+          customerEmail: email,
+          property: interestedProperty.propertyId || undefined,
+          agentRequest: agentReqDoc?._id || undefined,
+          subject: propTitle,
+          messages: [
+            {
+              sender: "system",
+              text: systemMsg,
+            },
+          ],
+        });
+        await convo.save();
+
+        // Link back: AgentRequest → InboxConversation
+        if (agentReqDoc) {
+          agentReqDoc.inboxConversation = convo._id;
+          await agentReqDoc.save();
         }
+      } catch (err) {
+        console.error("[AI Search] InboxConversation create error:", err.message);
       }
 
       return {
