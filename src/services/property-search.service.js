@@ -42,14 +42,56 @@ async function searchProperties(params) {
   // ── Build filter ─────────────────────────────────────────
   const filter = { status: "active", is_particular: true };
 
-  // Full-text search
+  // Full-text search (accent/diacritic-insensitive regex)
   if (q.search && String(q.search).trim()) {
-    filter.$text = { $search: String(q.search).trim() };
+    const searchTerm = String(q.search).trim();
+    // Build accent-insensitive regex from search term
+    const searchNorm = searchTerm
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    const searchRegex = searchNorm.replace(/[aeiouns]/gi, (ch) => {
+      const map = {
+        a: "[aáàäâã]",
+        e: "[eéèëê]",
+        i: "[iíìïî]",
+        o: "[oóòöôõ]",
+        u: "[uúùüû]",
+        n: "[nñ]",
+        s: "[sś]",
+      };
+      return map[ch.toLowerCase()] || ch;
+    });
+    const rgx = { $regex: searchRegex, $options: "i" };
+    // Search across location fields + title + description with accent tolerance
+    filter.$or = [
+      { "location.neighborhood": rgx },
+      { "location.district": rgx },
+      { "location.address": rgx },
+      { title: rgx },
+      { description: rgx },
+    ];
   }
 
-  // City
+  // City (accent-insensitive regex using Unicode character classes)
   if (q.city && q.city !== "all") {
-    filter["location.city"] = { $regex: q.city, $options: "i" };
+    // Normalize: strip accents for regex matching so "malaga" matches "Málaga"
+    const cityNorm = q.city
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    // Build regex that matches both accented and unaccented forms
+    const cityRegex = cityNorm.replace(/[aeiouns]/gi, (ch) => {
+      const map = {
+        a: "[aáàäâã]",
+        e: "[eéèëê]",
+        i: "[iíìïî]",
+        o: "[oóòöôõ]",
+        u: "[uúùüû]",
+        n: "[nñ]",
+        s: "[sś]",
+      };
+      return map[ch.toLowerCase()] || ch;
+    });
+    filter["location.city"] = { $regex: cityRegex, $options: "i" };
   }
 
   // Operation
@@ -117,6 +159,35 @@ async function searchProperties(params) {
     };
   }
 
+  // Polygon geo filter (array of [lng, lat] coordinates)
+  // Accepts: q.polygon as JSON string or array of [lng, lat] pairs
+  if (q.polygon) {
+    let coords = q.polygon;
+    if (typeof coords === "string") {
+      try {
+        coords = JSON.parse(coords);
+      } catch {
+        coords = null;
+      }
+    }
+    if (Array.isArray(coords) && coords.length >= 3) {
+      // Ensure polygon is closed (first point == last point)
+      const first = coords[0];
+      const last = coords[coords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        coords.push([...first]);
+      }
+      filter.geo = {
+        $geoWithin: {
+          $geometry: {
+            type: "Polygon",
+            coordinates: [coords],
+          },
+        },
+      };
+    }
+  }
+
   // ── Sort ─────────────────────────────────────────────────
   let sort = { createdAt: -1 };
   const sortParam = q.sort || "newest";
@@ -127,9 +198,7 @@ async function searchProperties(params) {
     price_asc: { price: 1 },
     price_desc: { price: -1 },
     size_desc: { "features.size_sqm": -1 },
-    relevance: filter.$text
-      ? { score: { $meta: "textScore" }, createdAt: -1 }
-      : { createdAt: -1 },
+    relevance: { createdAt: -1 },
     // Frontend sort values (dash prefix = descending)
     "-scraped_at": { scraped_at: -1 },
     price: { price: 1 },
@@ -160,7 +229,6 @@ async function searchProperties(params) {
     is_particular: 1,
     createdAt: 1,
     scraped_at: 1,
-    ...(filter.$text ? { score: { $meta: "textScore" } } : {}),
   };
 
   // ── Execute ──────────────────────────────────────────────
@@ -208,7 +276,6 @@ async function searchProperties(params) {
     },
     createdAt: p.createdAt,
     scraped_at: p.scraped_at,
-    _score: p.score,
   }));
 
   return {

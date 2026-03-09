@@ -40,6 +40,10 @@ const propertySchema = new mongoose.Schema(
       latitude: Number,
       longitude: Number,
     },
+    geo: {
+      type: { type: String, enum: ["Point"], default: "Point" },
+      coordinates: { type: [Number] }, // [longitude, latitude]
+    },
     features: {
       size_sqm: Number,
       bedrooms: Number,
@@ -72,7 +76,9 @@ const propertySchema = new mongoose.Schema(
 );
 
 // ── Indexes for fast querying ────────────────────────────────
-// Geo index for map queries
+// GeoJSON 2dsphere index for polygon/geo queries
+propertySchema.index({ geo: "2dsphere" });
+// Legacy geo index (kept for backwards compat)
 propertySchema.index({ "location.latitude": 1, "location.longitude": 1 });
 
 // Filter indexes
@@ -108,6 +114,16 @@ propertySchema.index(
     name: "property_text_index",
   },
 );
+
+// Auto-populate geo field from lat/lng before saving
+propertySchema.pre("save", function (next) {
+  const lat = this.location?.latitude;
+  const lng = this.location?.longitude;
+  if (lat && lng && !isNaN(lat) && !isNaN(lng)) {
+    this.geo = { type: "Point", coordinates: [lng, lat] };
+  }
+  next();
+});
 
 // Auto-generate numeric code before saving (10001, 10002, ...)
 propertySchema.pre("save", async function (next) {
