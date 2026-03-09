@@ -192,7 +192,7 @@ router.get("/admin/all", agentAuth, async (req, res) => {
       ).length;
       return {
         _id: c._id,
-        user: c.user,
+        user: c.user || { name: c.customerName, email: c.customerEmail, phone: c.customerPhone },
         property: c.property,
         agentRequest: c.agentRequest,
         subject: c.subject,
@@ -223,7 +223,11 @@ router.get("/admin/:id", agentAuth, async (req, res) => {
       .populate("agentRequest");
 
     if (!convo) return res.status(404).json({ error: "Not found" });
-    res.json(convo);
+    const obj = convo.toObject();
+    if (!obj.user && (obj.customerName || obj.customerEmail)) {
+      obj.user = { name: obj.customerName, email: obj.customerEmail, phone: obj.customerPhone };
+    }
+    res.json(obj);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch conversation" });
   }
@@ -261,6 +265,56 @@ router.patch("/admin/:id/read", agentAuth, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to mark as read" });
+  }
+});
+
+// ── Create conversation from AgentRequest (admin) ───────────
+const AgentRequest = require("../models/agent-request.model");
+
+router.post("/admin/create-from-request", agentAuth, async (req, res) => {
+  try {
+    const { requestId } = req.body;
+    if (!requestId) return res.status(400).json({ error: "requestId required" });
+
+    const agentReq = await AgentRequest.findById(requestId);
+    if (!agentReq) return res.status(404).json({ error: "Request not found" });
+
+    // Check if conversation already exists
+    if (agentReq.inboxConversation) {
+      const existing = await InboxConversation.findById(agentReq.inboxConversation);
+      if (existing) return res.json(existing);
+    }
+
+    // Build subject from request info
+    const subject = agentReq.lookingFor || agentReq.summary || "Solicitud de cliente";
+
+    // Create conversation (with or without a registered user)
+    const convo = new InboxConversation({
+      user: null,
+      customerName: agentReq.customerName || "",
+      customerPhone: agentReq.customerPhone || "",
+      customerEmail: agentReq.customerEmail || "",
+      property: agentReq.interestedProperty?.propertyId || undefined,
+      agentRequest: agentReq._id,
+      subject,
+      messages: [
+        {
+          sender: "system",
+          text: agentReq.summary || `Solicitud: ${agentReq.lookingFor || "Contacto con agente"}`,
+        },
+      ],
+    });
+    await convo.save();
+
+    // Link back
+    agentReq.inboxConversation = convo._id;
+    await agentReq.save();
+
+    await convo.populate("property", "title price location images");
+    res.status(201).json(convo);
+  } catch (err) {
+    console.error("Create from request error:", err.message);
+    res.status(500).json({ error: "Failed to create conversation" });
   }
 });
 

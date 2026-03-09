@@ -16,8 +16,12 @@ const inboxConversationSchema = new mongoose.Schema(
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
     },
+    // For conversations with non-registered customers (from AgentRequest)
+    customerName: { type: String, default: "" },
+    customerPhone: { type: String, default: "" },
+    customerEmail: { type: String, default: "" },
     property: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Property",
