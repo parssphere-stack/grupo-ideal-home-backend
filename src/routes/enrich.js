@@ -4,6 +4,7 @@
 
 const express = require("express");
 const router = express.Router();
+const { cleanDescription } = require("../utils/clean-description");
 
 // Simple in-memory cache (per process)
 const cache = new Map();
@@ -119,6 +120,7 @@ async function scrapeIdealista(url) {
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+    description = cleanDescription(description);
   }
 
   // ── Extract features ──

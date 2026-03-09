@@ -1,5 +1,6 @@
 const axios = require('axios');
 const Property = require('../models/property.model');
+const { cleanDescription } = require('../utils/clean-description');
 const {
   SCRAPER_CITIES,
   COSTA_DEL_SOL_EXTRAS,
@@ -369,7 +370,7 @@ class IdealistaScraperService {
         external_id: `idealista_${externalId}`,
         source: 'idealista',
         title,
-        description: item.description || item.comment || null,
+        description: cleanDescription(item.description || item.comment || "") || null,
         type: type || 'apartment',
         operation,
         price,

@@ -5,6 +5,7 @@
 const axios = require("axios");
 const Property = require("../models/property.model");
 const { isAgency, isExpired } = require("../utils/agency-detector");
+const { cleanDescription } = require("../utils/clean-description");
 
 const APIFY_TOKEN = process.env.APIFY_TOKEN || "";
 const ACTOR_ID = "REcGj6dyoIJ9Z7aE6";
@@ -47,7 +48,7 @@ function mapItem(item) {
       item.title ||
       item.suggestedTexts?.title ||
       `${TYPE_MAP[rawType] || "property"} en ${item.address || ""}`,
-    description: item.description || "",
+    description: cleanDescription(item.description || ""),
     price: item.price || item.priceInfo?.price?.amount || 0,
     price_per_sqm:
       item.priceByArea ||

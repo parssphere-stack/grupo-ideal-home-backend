@@ -217,6 +217,7 @@ async function searchProperties(params) {
     code: 1,
     idealista_id: 1,
     title: 1,
+    description: 1,
     price: 1,
     price_per_sqm: 1,
     type: 1,
@@ -274,6 +275,7 @@ async function searchProperties(params) {
       phone: p.contact?.phone,
       name: p.contact?.name,
     },
+    description: p.description || "",
     createdAt: p.createdAt,
     scraped_at: p.scraped_at,
   }));
