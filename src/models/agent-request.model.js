@@ -61,6 +61,13 @@ const agentRequestSchema = new mongoose.Schema(
       imageUrl: { type: String, default: "" },
     },
 
+    // Link to inbox conversation (for two-way messaging)
+    inboxConversation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "InboxConversation",
+      default: null,
+    },
+
     // Agent notes
     notes: { type: String, default: "" },
   },

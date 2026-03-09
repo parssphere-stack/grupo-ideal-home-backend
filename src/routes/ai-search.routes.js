@@ -632,9 +632,10 @@ async function executeTool(toolName, toolInput, session, currentUser, extraParam
         budgetStr = [filters.min_price && `${filters.min_price.toLocaleString("es-ES")}€`, filters.max_price && `${filters.max_price.toLocaleString("es-ES")}€`].filter(Boolean).join(" – ");
       }
 
-      // Create AgentRequest for admin dashboard
+      // Create AgentRequest + InboxConversation (linked together)
+      let agentReqDoc = null;
       try {
-        await AgentRequest.create({
+        agentReqDoc = await AgentRequest.create({
           customerName: name,
           customerPhone: phone,
           customerEmail: email,
@@ -651,21 +652,34 @@ async function executeTool(toolName, toolInput, session, currentUser, extraParam
         console.error("[AI Search] AgentRequest create error:", err.message);
       }
 
-      // Also create inbox conversation if user is logged in
+      // Create inbox conversation for two-way messaging (if user is logged in)
       if (currentUser) {
         try {
+          // Build a friendly first message
+          const propTitle = interestedProperty.title || reason;
+          const systemMsg = conversation_summary
+            ? `${conversation_summary}`
+            : `Solicitud: ${reason}`;
+
           const convo = new InboxConversation({
             user: currentUser._id,
-            property: property_id || undefined,
-            subject: `Agent Request: ${reason}`,
+            property: interestedProperty.propertyId || undefined,
+            agentRequest: agentReqDoc?._id || undefined,
+            subject: propTitle,
             messages: [
               {
                 sender: "system",
-                text: `🤖 AI Agent Request\n\nUser: ${name} (${email}${phone ? `, ${phone}` : ""})\nReason: ${reason}\n\nConversation summary:\n${conversation_summary}`,
+                text: systemMsg,
               },
             ],
           });
           await convo.save();
+
+          // Link back: AgentRequest → InboxConversation
+          if (agentReqDoc) {
+            agentReqDoc.inboxConversation = convo._id;
+            await agentReqDoc.save();
+          }
         } catch (err) {
           console.error("[AI Search] InboxConversation create error:", err.message);
         }

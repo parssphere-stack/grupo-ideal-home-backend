@@ -659,6 +659,7 @@ router.get("/requests", auth, async (req, res) => {
       .skip((+page - 1) * +limit)
       .limit(+limit)
       .populate("assignedTo", "name email")
+      .populate("inboxConversation", "_id")
       .lean();
 
     res.json({ requests, total });

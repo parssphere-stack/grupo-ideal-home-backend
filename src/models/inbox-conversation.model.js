@@ -22,6 +22,10 @@ const inboxConversationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Property",
     },
+    agentRequest: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AgentRequest",
+    },
     subject: String,
     messages: [messageSchema],
     status: {

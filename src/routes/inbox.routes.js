@@ -1,17 +1,43 @@
 /**
- * Inbox API
+ * Inbox API — Two-way messaging between clients and agents
  *
- * GET    /api/inbox              — list conversations
- * GET    /api/inbox/:id          — get conversation
- * POST   /api/inbox              — create conversation
- * POST   /api/inbox/:id/reply    — add message
- * PATCH  /api/inbox/:id/read     — mark messages read
+ * CLIENT endpoints (userAuth):
+ *   GET    /api/inbox              — list my conversations
+ *   GET    /api/inbox/:id          — get conversation
+ *   POST   /api/inbox              — create conversation
+ *   POST   /api/inbox/:id/reply    — add buyer message
+ *   PATCH  /api/inbox/:id/read     — mark agent messages as read
+ *
+ * ADMIN/AGENT endpoints (agentAuth):
+ *   GET    /api/inbox/admin/all         — list all conversations (admin)
+ *   GET    /api/inbox/admin/:id         — get any conversation (admin)
+ *   POST   /api/inbox/admin/:id/reply   — send agent message to client
+ *   PATCH  /api/inbox/admin/:id/read    — mark buyer messages as read
  */
 
 const express = require("express");
 const router = express.Router();
+const jwt = require("jsonwebtoken");
 const InboxConversation = require("../models/inbox-conversation.model");
 const { userAuth: auth } = require("../middleware/auth");
+
+const JWT_SECRET = process.env.JWT_SECRET || "grupo-ideal-secret-2024";
+
+// ── Agent auth middleware ────────────────────────────────────
+function agentAuth(req, res, next) {
+  const token = req.headers.authorization?.replace("Bearer ", "");
+  if (!token) return res.status(401).json({ error: "No token" });
+  try {
+    req.agent = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// CLIENT ENDPOINTS
+// ══════════════════════════════════════════════════════════════
 
 // ── List conversations ───────────────────────────────────────
 router.get("/", auth, async (req, res) => {
@@ -46,6 +72,8 @@ router.get("/", auth, async (req, res) => {
 
 // ── Get single conversation ──────────────────────────────────
 router.get("/:id", auth, async (req, res) => {
+  // Skip admin routes
+  if (req.params.id === "admin") return res.status(404).json({ error: "Not found" });
   try {
     const convo = await InboxConversation.findOne({
       _id: req.params.id,
@@ -94,7 +122,7 @@ router.post("/", auth, async (req, res) => {
   }
 });
 
-// ── Reply to conversation ────────────────────────────────────
+// ── Reply to conversation (buyer) ───────────────────────────
 router.post("/:id/reply", auth, async (req, res) => {
   try {
     const { text } = req.body;
@@ -116,7 +144,7 @@ router.post("/:id/reply", auth, async (req, res) => {
   }
 });
 
-// ── Mark messages as read ────────────────────────────────────
+// ── Mark messages as read (buyer marks agent messages) ───────
 router.patch("/:id/read", auth, async (req, res) => {
   try {
     const convo = await InboxConversation.findOne({
@@ -128,6 +156,105 @@ router.patch("/:id/read", auth, async (req, res) => {
 
     convo.messages.forEach((m) => {
       if (m.sender !== "buyer") m.read = true;
+    });
+    await convo.save();
+
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to mark as read" });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// ADMIN/AGENT ENDPOINTS
+// ══════════════════════════════════════════════════════════════
+
+// ── List all conversations (admin) ──────────────────────────
+router.get("/admin/all", agentAuth, async (req, res) => {
+  try {
+    const { status, page = 1, limit = 50 } = req.query;
+    const filter = {};
+    if (status) filter.status = status;
+
+    const total = await InboxConversation.countDocuments(filter);
+    const convos = await InboxConversation.find(filter)
+      .populate("user", "name email phone")
+      .populate("property", "title price location images")
+      .populate("agentRequest")
+      .sort({ updatedAt: -1 })
+      .skip((+page - 1) * +limit)
+      .limit(+limit);
+
+    const result = convos.map((c) => {
+      const last = c.messages[c.messages.length - 1];
+      const unreadAgent = c.messages.filter(
+        (m) => !m.read && m.sender === "buyer",
+      ).length;
+      return {
+        _id: c._id,
+        user: c.user,
+        property: c.property,
+        agentRequest: c.agentRequest,
+        subject: c.subject,
+        status: c.status,
+        messageCount: c.messages.length,
+        lastMessage: last
+          ? { text: last.text, sender: last.sender, timestamp: last.timestamp }
+          : null,
+        unreadAgent,
+        updatedAt: c.updatedAt,
+        createdAt: c.createdAt,
+      };
+    });
+
+    res.json({ conversations: result, total });
+  } catch (err) {
+    console.error("Admin inbox list error:", err.message);
+    res.status(500).json({ error: "Failed to fetch conversations" });
+  }
+});
+
+// ── Get single conversation (admin) ─────────────────────────
+router.get("/admin/:id", agentAuth, async (req, res) => {
+  try {
+    const convo = await InboxConversation.findById(req.params.id)
+      .populate("user", "name email phone")
+      .populate("property", "title price location images")
+      .populate("agentRequest");
+
+    if (!convo) return res.status(404).json({ error: "Not found" });
+    res.json(convo);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch conversation" });
+  }
+});
+
+// ── Reply to conversation (agent/admin) ─────────────────────
+router.post("/admin/:id/reply", agentAuth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "Message text required" });
+
+    const convo = await InboxConversation.findById(req.params.id);
+    if (!convo) return res.status(404).json({ error: "Not found" });
+
+    convo.messages.push({ sender: "agent", text });
+    await convo.save();
+
+    res.json({ ok: true, message: convo.messages[convo.messages.length - 1] });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to send reply" });
+  }
+});
+
+// ── Mark buyer messages as read (agent) ─────────────────────
+router.patch("/admin/:id/read", agentAuth, async (req, res) => {
+  try {
+    const convo = await InboxConversation.findById(req.params.id);
+    if (!convo) return res.status(404).json({ error: "Not found" });
+
+    convo.messages.forEach((m) => {
+      if (m.sender === "buyer") m.read = true;
     });
     await convo.save();
 
