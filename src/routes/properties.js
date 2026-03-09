@@ -28,6 +28,7 @@ const router = express.Router();
 const Property = require("../models/property.model");
 const mongoose = require("mongoose");
 const { searchProperties } = require("../services/property-search.service");
+const OpenAI = require("openai");
 
 // ── GET /api/properties ─────────────────────────────────────
 router.get("/", async (req, res) => {
@@ -357,6 +358,51 @@ router.get("/:id", async (req, res) => {
     res.json(p);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /api/properties/translate-description ───────────────
+const LANG_NAMES = {
+  en: "English", fr: "French", de: "German", da: "Danish", sv: "Swedish",
+  fi: "Finnish", ru: "Russian", pl: "Polish", it: "Italian", nl: "Dutch", fa: "Persian",
+};
+const _transCache = new Map();
+
+router.post("/translate-description", async (req, res) => {
+  try {
+    const { description, targetLang } = req.body;
+    if (!description || !targetLang || !LANG_NAMES[targetLang]) {
+      return res.status(400).json({ error: "Missing description or invalid targetLang" });
+    }
+
+    const cacheKey = `${targetLang}:${description.slice(0, 80)}`;
+    if (_transCache.has(cacheKey)) return res.json({ translated: _transCache.get(cacheKey) });
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content: `You are a real estate translator. Translate the following Spanish property description to ${LANG_NAMES[targetLang]}. Keep it natural and professional. Only return the translated text, nothing else.`,
+        },
+        { role: "user", content: description },
+      ],
+    });
+
+    const translated = resp.choices[0]?.message?.content?.trim() || description;
+    _transCache.set(cacheKey, translated);
+    // Keep cache bounded
+    if (_transCache.size > 5000) {
+      const first = _transCache.keys().next().value;
+      _transCache.delete(first);
+    }
+
+    res.json({ translated });
+  } catch (err) {
+    console.error("Translation error:", err.message);
+    res.status(500).json({ error: "Translation failed" });
   }
 });
 
