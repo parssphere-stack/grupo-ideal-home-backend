@@ -468,23 +468,35 @@ async function executeGetNeighborhoodInfo(params) {
 
 async function executeRequestHumanAgent(params, session, callId) {
   const AgentRequest = require("../models/agent-request.model");
+  console.log("[VAPI] request_human_agent raw params:", JSON.stringify(params));
+
+  // Validate: at minimum we need a name and phone
+  const name = (params.customer_name || params.customerName || "").trim();
+  const phone = (params.customer_phone || params.customerPhone || "").trim();
+
+  if (!name || !phone) {
+    console.warn("[VAPI] request_human_agent missing name/phone:", { name, phone });
+    return "ERROR: You must collect the customer's name and phone number before calling this tool. Please ask for their name and phone, then call request_human_agent again with customer_name and customer_phone filled in.";
+  }
+
   try {
     await AgentRequest.create({
-      customerName: params.customer_name || "",
-      customerPhone: params.customer_phone || "",
-      customerEmail: params.customer_email || "",
+      customerName: name,
+      customerPhone: phone,
+      customerEmail: (params.customer_email || params.customerEmail || "").trim(),
       language: session.lang || "es",
       summary: params.summary || "Customer requested to speak with an agent",
-      lookingFor: params.looking_for || "",
+      lookingFor: params.looking_for || params.lookingFor || "",
       budget: params.budget || "",
-      preferredArea: params.preferred_area || "",
+      preferredArea: params.preferred_area || params.preferredArea || "",
       source: "voice",
       callId: callId || null,
     });
+    console.log("[VAPI] AgentRequest created for:", name, phone);
     return "DONE: Request saved. A human agent will contact the customer soon.";
   } catch (err) {
     console.error("[VAPI] Request agent error:", err.message);
-    return "Request saved. An agent will contact you soon.";
+    return "ERROR: Failed to save request. Please try again.";
   }
 }
 
@@ -536,8 +548,8 @@ router.post("/webhook", async (req, res) => {
           function: t.toolCall?.function || t.function,
         }));
       }
-      console.log(`[VAPI] Processing ${toolCallList.length} tool calls, raw keys:`,
-        toolCallList.length ? Object.keys(toolCallList[0]).join(',') : 'empty');
+      console.log(`[VAPI] Processing ${toolCallList.length} tool calls, raw payload:`,
+        JSON.stringify(toolCallList.map(tc => ({ name: tc.name, keys: Object.keys(tc), params: tc.parameters, funcArgs: tc.function?.arguments }))));
       const s = getStrings(session.lang);
       const results = [];
 
@@ -705,7 +717,14 @@ TOOLS:
 - search_properties → search/filter properties
 - get_property_details → details about result #1, #2, etc.
 - get_neighborhood_info → area info/stats
-- request_human_agent → connect to human (get name + phone first)
+- request_human_agent → save request for agent callback
+
+PROACTIVE AGENT REQUESTS — VERY IMPORTANT:
+- When the customer shows interest in a property ("me gusta", "I like this one", "quiero más información", "tell me more about this one", "is this available?", "can I visit?", "this looks good"), ALWAYS:
+  1. Ask for their name and phone: "¡Me alegra que te guste! Para que un agente te contacte con más detalles, ¿me das tu nombre y número de teléfono?"
+  2. Once you have their info, call request_human_agent immediately
+  3. Confirm: "¡Perfecto! Un agente de nuestro equipo se pondrá en contacto contigo pronto."
+- Do NOT wait for the customer to explicitly ask for an agent. If they show interest, proactively offer to connect them.
 
 PRICE CONTEXT: Madrid rent 700-2500€/mo, sale 150k-800k€. Málaga rent 600-1800€/mo, sale 120k-500k€.`,
         tools: [
@@ -770,7 +789,7 @@ PRICE CONTEXT: Madrid rent 700-2500€/mo, sale 150k-800k€. Málaga rent 600-1
             type: "function",
             function: {
               name: "request_human_agent",
-              description: "Save a request for a human agent to contact the customer. Call ONLY when the customer explicitly wants to talk to a real person. Collect their name and phone number first.",
+              description: "Save a request for a human agent to contact the customer. Call this when: (1) customer shows interest in a specific property ('me gusta', 'I like this', 'quiero más información', 'can I visit?'), (2) customer explicitly asks for a human agent, (3) customer wants to schedule a visit or make an offer. ALWAYS collect name and phone first.",
               parameters: {
                 type: "object",
                 properties: {
