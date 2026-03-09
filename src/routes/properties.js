@@ -28,7 +28,7 @@ const router = express.Router();
 const Property = require("../models/property.model");
 const mongoose = require("mongoose");
 const { searchProperties } = require("../services/property-search.service");
-const OpenAI = require("openai");
+const axios = require("axios");
 
 // ── GET /api/properties ─────────────────────────────────────
 router.get("/", async (req, res) => {
@@ -362,6 +362,10 @@ router.get("/:id", async (req, res) => {
 });
 
 // ── POST /api/properties/translate-description ───────────────
+const LANG_CODES = {
+  en: "en", fr: "fr", de: "de", da: "da", sv: "sv",
+  fi: "fi", ru: "ru", pl: "pl", it: "it", nl: "nl", fa: "fa",
+};
 const LANG_NAMES = {
   en: "English", fr: "French", de: "German", da: "Danish", sv: "Swedish",
   fi: "Finnish", ru: "Russian", pl: "Polish", it: "Italian", nl: "Dutch", fa: "Persian",
@@ -371,29 +375,59 @@ const _transCache = new Map();
 router.post("/translate-description", async (req, res) => {
   try {
     const { description, targetLang } = req.body;
-    if (!description || !targetLang || !LANG_NAMES[targetLang]) {
+    if (!description || !targetLang || !LANG_CODES[targetLang]) {
       return res.status(400).json({ error: "Missing description or invalid targetLang" });
     }
 
     const cacheKey = `${targetLang}:${description.slice(0, 80)}`;
     if (_transCache.has(cacheKey)) return res.json({ translated: _transCache.get(cacheKey) });
 
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const resp = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content: `You are a real estate translator. Translate the following Spanish property description to ${LANG_NAMES[targetLang]}. Keep it natural and professional. Only return the translated text, nothing else.`,
-        },
-        { role: "user", content: description },
-      ],
-    });
+    let translated = description;
 
-    const translated = resp.choices[0]?.message?.content?.trim() || description;
+    // Try OpenAI first if available
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const OpenAI = require("openai");
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const resp = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          temperature: 0.3,
+          messages: [
+            {
+              role: "system",
+              content: `You are a real estate translator. Translate the following Spanish property description to ${LANG_NAMES[targetLang]}. Keep it natural and professional. Only return the translated text, nothing else.`,
+            },
+            { role: "user", content: description },
+          ],
+        });
+        translated = resp.choices[0]?.message?.content?.trim() || description;
+      } catch (aiErr) {
+        console.error("OpenAI translation error:", aiErr.message);
+        // Fall through to MyMemory fallback
+      }
+    }
+
+    // Fallback: free MyMemory translation API
+    if (translated === description) {
+      try {
+        const langPair = `es|${LANG_CODES[targetLang]}`;
+        const chunks = description.match(/.{1,500}/g) || [description];
+        const parts = [];
+        for (const chunk of chunks) {
+          const r = await axios.get("https://api.mymemory.translated.net/get", {
+            params: { q: chunk, langpair: langPair },
+            timeout: 10000,
+          });
+          parts.push(r.data?.responseData?.translatedText || chunk);
+        }
+        translated = parts.join(" ");
+      } catch (mmErr) {
+        console.error("MyMemory translation error:", mmErr.message);
+        return res.status(500).json({ error: "Translation failed" });
+      }
+    }
+
     _transCache.set(cacheKey, translated);
-    // Keep cache bounded
     if (_transCache.size > 5000) {
       const first = _transCache.keys().next().value;
       _transCache.delete(first);
