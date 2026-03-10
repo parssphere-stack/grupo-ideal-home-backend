@@ -159,6 +159,7 @@ app.use("/api/ai", require("./routes/ai-chat.routes"));
 app.use("/api/ai", require("./routes/ai-search.routes"));
 app.use("/api/vapi", require("./routes/vapi-webhook.routes"));
 app.use("/api/contact", require("./routes/contact.routes"));
+app.use("/api/analytics", require("./routes/analytics.routes"));
 
 // Health check
 app.get("/api/health", (req, res) => {
