@@ -346,13 +346,20 @@ router.get("/:id/analysis", async (req, res) => {
 // ── GET /api/properties/:id ──────────────────────────────────
 router.get("/:id", async (req, res) => {
   try {
-    const p = await Property.findOne({
-      $or: [
-        { _id: mongoose.isValidObjectId(req.params.id) ? req.params.id : null },
-        { idealista_id: req.params.id },
-        { code: req.params.id.toUpperCase() },
-      ],
-    }).lean();
+    const id = req.params.id;
+    const orConditions = [
+      { idealista_id: id },
+      { code: id.toUpperCase() },
+    ];
+    if (mongoose.isValidObjectId(id)) {
+      orConditions.unshift({ _id: id });
+    }
+    // Support URL-encoded full URLs as ID (e.g. from site link lookup)
+    if (id.startsWith("http")) {
+      const cleanUrl = decodeURIComponent(id).replace(/\/+$/, "");
+      orConditions.push({ url: cleanUrl }, { url: cleanUrl + "/" });
+    }
+    const p = await Property.findOne({ $or: orConditions }).lean();
 
     if (!p) return res.status(404).json({ error: "Not found" });
     res.json(p);

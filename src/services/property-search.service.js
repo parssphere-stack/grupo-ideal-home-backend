@@ -42,6 +42,14 @@ async function searchProperties(params) {
   // ── Build filter ─────────────────────────────────────────
   const filter = { status: "active", is_particular: true };
 
+  // Direct URL lookup — match property by its source URL field
+  if (q.url && String(q.url).trim()) {
+    filter.url = String(q.url).trim().replace(/\/+$/, ""); // strip trailing slash
+    // Also try with trailing slash
+    filter.url = { $in: [filter.url, filter.url + "/"] };
+    delete filter.is_particular; // don't filter by particular for direct lookup
+  }
+
   // Full-text search (accent/diacritic-insensitive regex)
   if (q.search && String(q.search).trim()) {
     const searchTerm = String(q.search).trim();
