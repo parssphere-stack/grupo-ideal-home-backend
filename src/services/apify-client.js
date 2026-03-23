@@ -90,6 +90,15 @@ function mapItem(item) {
       type: "particular",
       phone: ci.phone1?.phoneNumber || ci.phone || "",
     },
+    // Populate geo for 2dsphere index (pre-save hook doesn't run on findOneAndUpdate)
+    geo: (() => {
+      const lat = item.latitude || item.location?.latitude;
+      const lon = item.longitude || item.location?.longitude;
+      if (lat && lon && !isNaN(lat) && !isNaN(lon)) {
+        return { type: "Point", coordinates: [lon, lat] };
+      }
+      return undefined; // skip geo field entirely if no coordinates
+    })(),
     is_particular: true,
     status: "active",
     source: "idealista",
@@ -100,19 +109,16 @@ function mapItem(item) {
 // ── Trigger Apify actor ──────────────────────────────────────
 async function triggerActorRun(location) {
   if (!APIFY_TOKEN) throw new Error("APIFY_TOKEN not set");
-  const input = location.startUrl
-    ? {
-        startUrls: [{ url: location.startUrl }],
-        maxItems: location.maxItems || 200,
-        userType: "private",
-      }
-    : {
-        locationName: location.name,
-        country: "es",
-        operation: location.operation || "rent",
-        maxItems: location.maxItems || 200,
-        userType: "private",
-      };
+  const input = {
+    location: location.locationCode || "0-EU-ES-29",
+    country: "es",
+    operation: location.operation || "rent",
+    propertyType: "homes",
+    maxItems: location.maxItems || 200,
+    minPrice: String(location.minPrice || "0"),
+    maxPrice: "0",
+    sortBy: location.sortBy || "mostRecent",
+  };
   const res = await axios.post(
     `https://api.apify.com/v2/acts/${ACTOR_ID}/runs`,
     input,
@@ -184,7 +190,10 @@ async function importDataset(datasetId, loc = null) {
       const before = await Property.findOne({ idealista_id: mapped.idealista_id }).lean();
       await Property.findOneAndUpdate(
         { idealista_id: mapped.idealista_id },
-        { $set: { ...mapped, status: "active" } },
+        {
+          $set: { ...mapped, status: "active" },
+          $setOnInsert: { published_at: new Date() },
+        },
         { upsert: true, new: true, setDefaultsOnInsert: true, strict: false },
       );
       before ? updatedCount++ : newCount++;

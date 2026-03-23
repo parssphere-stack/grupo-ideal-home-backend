@@ -171,8 +171,9 @@ router.get("/:id/analysis", async (req, res) => {
     const price = property.price || 0;
     const sizeSqm = property.features?.size_sqm || 0;
     const pricePerSqm = sizeSqm > 0 ? Math.round(price / sizeSqm) : 0;
+    const publishDate = property.published_at || property.createdAt;
     const daysOnMarket = Math.floor(
-      (Date.now() - new Date(property.createdAt).getTime()) / 86400000
+      (Date.now() - new Date(publishDate).getTime()) / 86400000
     );
     const city = property.location?.city || "";
     const neighborhood = property.location?.neighborhood || "";
