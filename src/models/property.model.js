@@ -68,6 +68,7 @@ const propertySchema = new mongoose.Schema(
     status: { type: String, default: "active" },
     source: { type: String, default: "idealista" },
     price_history: [{ price: Number, date: { type: Date, default: Date.now } }],
+    published_at: Date,
     scraped_at: Date,
     validated_at: Date,
     phone_checked_at: Date,
