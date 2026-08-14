@@ -6,6 +6,10 @@ class AIService {
   constructor() {
     this.provider = process.env.AI_PROVIDER || 'anthropic';
 
+    if (this.provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY && process.env.OPENAI_API_KEY) {
+      this.provider = 'openai';
+    }
+
     if (this.provider === 'anthropic') {
       this.client = new Anthropic({
         apiKey: process.env.ANTHROPIC_API_KEY
@@ -15,6 +19,15 @@ class AIService {
         apiKey: process.env.OPENAI_API_KEY
       });
     }
+  }
+
+  // A dead Anthropic key must not take chat down when OpenAI is configured
+  _switchToOpenAI() {
+    if (this.provider !== 'anthropic' || !process.env.OPENAI_API_KEY) return false;
+    this.provider = 'openai';
+    this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    console.warn('[AI Service] Anthropic unavailable, switching to OpenAI');
+    return true;
   }
 
   /**
@@ -38,7 +51,12 @@ class AIService {
       let response;
 
       if (this.provider === 'anthropic') {
-        response = await this._callAnthropic(enhancedSystem, conversationHistory);
+        try {
+          response = await this._callAnthropic(enhancedSystem, conversationHistory);
+        } catch (anthropicErr) {
+          if (!this._switchToOpenAI()) throw anthropicErr;
+          response = await this._callOpenAI(enhancedSystem, conversationHistory);
+        }
       } else {
         response = await this._callOpenAI(enhancedSystem, conversationHistory);
       }
@@ -62,7 +80,7 @@ class AIService {
    */
   async _callAnthropic(systemPrompt, messages) {
     const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
       system: systemPrompt,
       messages: messages.map(m => ({
@@ -82,7 +100,7 @@ class AIService {
    */
   async _callOpenAI(systemPrompt, messages) {
     const response = await this.client.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-4o-mini',
       max_tokens: 1024,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -131,7 +149,12 @@ Devuelve SOLO un JSON válido con estos campos (usa null si no se mencionó):
 
       let result;
       if (this.provider === 'anthropic') {
-        result = await this._callAnthropic('You are a data extraction assistant. Return only valid JSON.', messages);
+        try {
+          result = await this._callAnthropic('You are a data extraction assistant. Return only valid JSON.', messages);
+        } catch (anthropicErr) {
+          if (!this._switchToOpenAI()) throw anthropicErr;
+          result = await this._callOpenAI('You are a data extraction assistant. Return only valid JSON.', messages);
+        }
       } else {
         result = await this._callOpenAI('You are a data extraction assistant. Return only valid JSON.', messages);
       }

@@ -56,6 +56,18 @@ function getProvider() {
   return provider;
 }
 
+// A dead Anthropic key (expired/no credits) must not take the whole AI
+// search down when an OpenAI key is also configured.
+function switchToOpenAI() {
+  if (!process.env.OPENAI_API_KEY) return false;
+  if (!openaiClient) {
+    const OpenAI = require("openai");
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  provider = "openai";
+  return true;
+}
+
 // ── Convert tools to OpenAI function format ─────────────────
 function toolsToOpenAI(tools) {
   return tools.map((t) => ({
@@ -74,7 +86,7 @@ async function callAI(systemPrompt, messages, tools) {
 
   if (prov === "anthropic") {
     // Try preferred model, fall back to Haiku if unavailable
-    const models = ["claude-sonnet-4-6-20250514", "claude-haiku-4-5-20251001"];
+    const models = ["claude-sonnet-5", "claude-haiku-4-5-20251001"];
     let response;
     for (const model of models) {
       try {
@@ -88,7 +100,14 @@ async function callAI(systemPrompt, messages, tools) {
         break; // success
       } catch (modelErr) {
         console.warn(`[AI Search] Model ${model} failed:`, modelErr.message);
-        if (model === models[models.length - 1]) throw modelErr; // last model, propagate
+        if (model === models[models.length - 1]) {
+          // Anthropic is fully down for us — hand over to OpenAI if we can
+          if (switchToOpenAI()) {
+            console.warn("[AI Search] Anthropic unavailable, switching to OpenAI");
+            return callAI(systemPrompt, messages, tools);
+          }
+          throw modelErr;
+        }
       }
     }
 
@@ -950,24 +969,171 @@ function trimHistory(session) {
   session.messages = session.messages.slice(cutIndex);
 }
 
-// ── Fallback: basic keyword search ──────────────────────────
+// ── Fallback: rule-based query parser (no AI needed) ────────
+// Extracts structured filters from natural language so the search still
+// returns real results when every AI provider is down.
+
+const FALLBACK_CITIES = [
+  "madrid", "malaga", "marbella", "estepona", "fuengirola", "torremolinos",
+  "benalmadena", "mijas", "nerja", "ronda", "antequera", "manilva",
+  "casares", "cartama", "pizarra", "coin", "alhaurin", "rincon de la victoria",
+];
+
+const FALLBACK_TYPES = [
+  [/\batico?s?\b/, "penthouse"],
+  [/\bestudios?\b|\bstudios?\b/, "studio"],
+  [/\bduplex\b/, "duplex"],
+  [/\blofts?\b/, "loft"],
+  [/\bchalets?\b|\bvillas?\b|\bcasas?\b|\bhouses?\b/, "house,villa"],
+];
+
+function parseFallbackNumber(raw) {
+  let s = String(raw).toLowerCase().trim().replace(/€|\s/g, "");
+  const hasK = /k$/.test(s);
+  s = s.replace(/k$/, "").replace(/[.,](?=\d{3}(\D|$))/g, "").replace(",", ".");
+  let n = parseFloat(s);
+  if (isNaN(n)) return null;
+  if (hasK) n *= 1000;
+  return Math.round(n);
+}
+
+function parseFallbackFilters(message) {
+  // Accent-stripped lowercase copy for matching
+  const norm = String(message)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  const filters = {};
+
+  // Operation
+  if (/\b(alquil|rent|arrend)/.test(norm) || /€\s*\/?\s*mes|per month|\/mes\b/.test(norm)) {
+    filters.operation = "rent";
+  } else if (/\b(venta|vender|comprar|compra|buy|sale)\b/.test(norm)) {
+    filters.operation = "sale";
+  }
+
+  // Rooms: "2 hab", "3 habitaciones", "2 dormitorios", "2 bed(rooms)"
+  const rooms = norm.match(/(\d+)\s*(?:hab\b|habitacion|dormitorio|bed|cuarto)/);
+  if (rooms) filters.min_rooms = parseInt(rooms[1], 10);
+
+  const NUM = "€?\\s*([\\d.,]+k?)\\s*€?";
+  // "entre X y Y"
+  const between = norm.match(new RegExp(`(?:entre|between)\\s*${NUM}\\s*(?:y|and|-)\\s*${NUM}`));
+  if (between) {
+    const lo = parseFallbackNumber(between[1]);
+    const hi = parseFallbackNumber(between[2]);
+    if (lo) filters.min_price = lo;
+    if (hi) filters.max_price = hi;
+  } else {
+    const max = norm.match(new RegExp(
+      `(?:menos de|hasta|maximo|max\\.?|under|below|por debajo de|<)\\s*${NUM}`));
+    if (max) {
+      const n = parseFallbackNumber(max[1]);
+      if (n) filters.max_price = n;
+    }
+    const min = norm.match(new RegExp(
+      `(?:mas de|desde|minimo|min\\.?|over|above|encima de|>)\\s*${NUM}`));
+    if (min) {
+      const n = parseFallbackNumber(min[1]);
+      if (n) filters.min_price = n;
+    }
+    // "1.400€/mes" with no qualifier → treat as budget ceiling
+    if (!filters.max_price) {
+      const monthly = norm.match(/([\d.,]+k?)\s*€?\s*\/?\s*(?:mes|month)/);
+      if (monthly) {
+        const n = parseFallbackNumber(monthly[1]);
+        if (n) {
+          filters.max_price = n;
+          filters.operation = "rent";
+        }
+      }
+    }
+  }
+
+  // Price heuristic when operation wasn't stated
+  if (!filters.operation && filters.max_price) {
+    filters.operation = filters.max_price <= 10000 ? "rent" : "sale";
+  }
+
+  // Property type
+  for (const [rgx, type] of FALLBACK_TYPES) {
+    if (rgx.test(norm)) {
+      filters.type = type;
+      break;
+    }
+  }
+
+  // City
+  for (const city of FALLBACK_CITIES) {
+    if (norm.includes(city)) {
+      filters.city = city;
+      break;
+    }
+  }
+
+  // Features
+  if (/ascensor|elevator|lift/.test(norm)) filters.has_elevator = true;
+  if (/parking|garaje|garage/.test(norm)) filters.has_parking = true;
+  if (/terraza|terrace/.test(norm)) filters.has_terrace = true;
+  if (/piscina|pool/.test(norm)) filters.has_pool = true;
+  if (/\bexterior\b/.test(norm)) filters.is_exterior = true;
+
+  // Leftover meaningful words → neighborhood/street text search
+  const STOP = new Set([
+    "piso", "pisos", "apartamento", "apartamentos", "apartment", "flat",
+    "casa", "casas", "chalet", "villa", "atico", "aticos", "estudio", "studio",
+    "duplex", "loft", "en", "de", "del", "la", "el", "los", "las", "un", "una",
+    "con", "y", "o", "por", "para", "que", "menos", "mas", "hasta", "desde",
+    "entre", "max", "min", "maximo", "minimo", "euros", "euro", "mes", "al",
+    "hab", "habitacion", "habitaciones", "dormitorio", "dormitorios", "cuarto",
+    "cuartos", "bed", "beds", "bedroom", "bedrooms", "under", "over", "below",
+    "above", "between", "and", "in", "with", "a", "the", "for", "venta",
+    "vender", "comprar", "compra", "buy", "sale", "alquiler", "alquilar",
+    "rent", "renta", "barato", "barata", "cheap", "bonito", "bonita", "busco",
+    "quiero", "necesito", "ascensor", "elevator", "lift", "parking", "garaje",
+    "garage", "terraza", "terrace", "piscina", "pool", "exterior", "month",
+    "grande", "pequeno", "amueblado", "amueblada", "furnished", "cerca",
+    "centro", "zona", "buena", "precio", "month", "e", "u",
+  ]);
+  if (filters.city) STOP.add(filters.city);
+  const leftover = norm
+    .replace(/[\d.,€<>]+k?/g, " ")
+    .split(/[^a-z]+/)
+    .filter((w) => w.length > 2 && !STOP.has(w) && !(filters.city || "").includes(w));
+  if (leftover.length) filters.search = leftover.slice(0, 4).join(" ");
+
+  return filters;
+}
+
 async function fallbackSearch(message, sessionId, res) {
   try {
-    const result = await searchProperties({
-      search: message,
-      limit: 8,
-      page: 1,
-    });
+    const filters = parseFallbackFilters(message);
+
+    let result = await searchProperties({ ...filters, limit: 8, page: 1 });
+
+    // Leftover words may be noise rather than a real neighborhood — retry without them
+    if (result.total === 0 && filters.search) {
+      delete filters.search;
+      result = await searchProperties({ ...filters, limit: 8, page: 1 });
+    }
+
+    const isSpanish = /[áéíóúñ¿¡]|piso|habitacion|alquiler|venta|menos|busco/i.test(message);
+    const reply =
+      result.total > 0
+        ? isSpanish
+          ? `He encontrado ${result.total} propiedades que encajan con tu búsqueda. Aquí tienes las mejores opciones.`
+          : `I found ${result.total} properties matching your search. Here are the top results.`
+        : isSpanish
+          ? "No he encontrado propiedades con esos criterios. Prueba a ampliar la búsqueda."
+          : "No properties found with those criteria. Try different keywords or broaden your search.";
 
     res.json({
-      reply:
-        result.total > 0
-          ? `I found ${result.total} properties matching your keywords. Here are the top results.`
-          : "No properties found with those criteria. Try different keywords or broaden your search.",
+      reply,
       properties: result.properties,
       total: result.total,
-      filters_applied: { search: message },
+      filters_applied: filters,
       session_id: sessionId,
+      fallback: true,
     });
   } catch (err) {
     res.status(500).json({ error: "Search failed" });

@@ -23,16 +23,43 @@ function getClient() {
   return client;
 }
 
+let openaiClient = null;
+function getOpenAI() {
+  if (!openaiClient && process.env.OPENAI_API_KEY) {
+    const OpenAI = require("openai");
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
+
+async function chatViaOpenAI(system, messages) {
+  const openai = getOpenAI();
+  if (!openai) return null;
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 1024,
+    messages: [
+      ...(system ? [{ role: "system", content: system }] : []),
+      ...messages.slice(-8),
+    ],
+  });
+  return response.choices?.[0]?.message?.content || "";
+}
+
 router.post("/chat", limiter, async (req, res) => {
+  const { system, messages } = req.body;
+  if (!messages || !Array.isArray(messages) || !messages.length) {
+    return res.status(400).json({ error: "messages required" });
+  }
+
   try {
     const anthropic = getClient();
     if (!anthropic) {
-      return res.status(503).json({ error: "AI service not configured" });
-    }
-
-    const { system, messages } = req.body;
-    if (!messages || !Array.isArray(messages) || !messages.length) {
-      return res.status(400).json({ error: "messages required" });
+      const reply = await chatViaOpenAI(system, messages);
+      if (reply === null) {
+        return res.status(503).json({ error: "AI service not configured" });
+      }
+      return res.json({ reply });
     }
 
     const response = await anthropic.messages.create({
@@ -45,7 +72,14 @@ router.post("/chat", limiter, async (req, res) => {
     const text = response.content?.[0]?.text || "";
     res.json({ reply: text });
   } catch (err) {
-    console.error("[AI Chat] Error:", err.message);
+    console.error("[AI Chat] Anthropic error:", err.message);
+    // Dead Anthropic key shouldn't kill the chat if OpenAI is configured
+    try {
+      const reply = await chatViaOpenAI(system, messages);
+      if (reply !== null) return res.json({ reply });
+    } catch (oaiErr) {
+      console.error("[AI Chat] OpenAI fallback error:", oaiErr.message);
+    }
     res.status(500).json({ error: "AI request failed" });
   }
 });
